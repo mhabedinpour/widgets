@@ -1,5 +1,5 @@
-use alloc::boxed::Box;
 use crate::drawer::{CircleData, Color, Drawer, LineData, Rect, RectData, TextData, TriangleData};
+use alloc::boxed::Box;
 use embedded_graphics::{
     mono_font::{MonoTextStyle, ascii::FONT_6X10},
     pixelcolor::Rgb888,

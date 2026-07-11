@@ -1,9 +1,9 @@
-use alloc::sync::Arc;
-use alloc::boxed::Box;
 use crate::drawer::{
     CircleData, Color, Drawer, EmbeddedGraphicsDrawer, LineData, Rect, RectData, Size, TextData,
     TriangleData,
 };
+use alloc::boxed::Box;
+use alloc::sync::Arc;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use esp_hal::Blocking;

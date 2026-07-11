@@ -27,7 +27,7 @@ impl<'a> WidgetManager<'a> {
     pub fn render(&mut self) {
         for (_, widget) in self.widgets.iter_mut() {
             self.drawer.with_viewport(widget.placement, &mut |d| {
-                widget.executor.render(Context { drawer: d });
+                widget.executor.render(Context::new(d));
             });
         }
     }

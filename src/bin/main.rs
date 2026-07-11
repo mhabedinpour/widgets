@@ -109,7 +109,7 @@ async fn main(spawner: Spawner) -> ! {
     };
     let i2s = peripherals.I2S0.into();
     let dma = peripherals.DMA_I2S0;
-    let freq = Rate::from_mhz(18);
+    let freq = Rate::from_mhz(16);
 
     let mut backend = I2s64x64::new(pins, i2s, dma, freq);
     let mut manager = WidgetManager::new(&mut backend.1);
