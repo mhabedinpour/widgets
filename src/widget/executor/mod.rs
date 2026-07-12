@@ -1,4 +1,3 @@
-pub mod test;
 pub mod wasm;
 
 use crate::drawer::Drawer;

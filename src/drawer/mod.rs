@@ -21,7 +21,7 @@ pub trait Drawer {
     fn execute_triangle(&mut self, data: TriangleData);
     fn execute_line(&mut self, data: LineData);
     fn execute_text(&mut self, data: TextData<'_>);
-    fn execute_clear(&mut self, color: Color);
+    fn execute_clear(&mut self, data: ClearData);
 
     fn with_viewport(&mut self, bounds: Rect, f: &mut dyn FnMut(&mut dyn Drawer));
 }

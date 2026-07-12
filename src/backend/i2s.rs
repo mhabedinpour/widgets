@@ -1,6 +1,6 @@
 use crate::drawer::{
-    CircleData, Color, Drawer, EmbeddedGraphicsDrawer, LineData, Rect, RectData, Size, TextData,
-    TriangleData,
+    CircleData, ClearData, Color, Drawer, EmbeddedGraphicsDrawer, LineData, Rect, RectData, Size,
+    TextData, TriangleData,
 };
 use alloc::boxed::Box;
 use alloc::sync::Arc;
@@ -90,8 +90,8 @@ macro_rules! define_i2s_backend {
                 self.drawer.execute_text(data);
                 self.send_copy();
             }
-            fn execute_clear(&mut self, color: Color) {
-                self.drawer.execute_clear(color);
+            fn execute_clear(&mut self, data: ClearData) {
+                self.drawer.execute_clear(data);
                 self.send_copy();
             }
             fn with_viewport(&mut self, bounds: Rect, f: &mut dyn FnMut(&mut dyn Drawer)) {
@@ -119,7 +119,9 @@ macro_rules! define_i2s_backend {
                         height: $rows,
                     },
                 );
-                drawer.execute_clear(Color::Rgb(0, 0, 0));
+                drawer.execute_clear(ClearData {
+                    color: Color::Rgb(0, 0, 0),
+                });
 
                 let ch = Arc::new(FBChannel::new());
                 let _ = ch.try_receive();

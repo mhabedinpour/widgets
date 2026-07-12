@@ -24,3 +24,7 @@ target/
 
 # Ignore .DS_Store file in mac
 **/.DS_Store
+
+widgets/node_modules
+widgets/*.wasm
+widgets/drawer.ts

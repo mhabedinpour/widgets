@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo build:*)",
+      "Bash(find /Users/mo/Projects/widgets -name *.wasm)",
+      "Bash(node_modules/.bin/asc --version)",
+      "Bash(wasm-objdump -x /Users/mo/Projects/widgets/target/xtensa-esp32-none-elf/debug/build/widgets-12bb480a1bdd4842/out/widgets/sample.wasm)",
+      "Bash(node -e:*)"
+    ]
+  }
+}

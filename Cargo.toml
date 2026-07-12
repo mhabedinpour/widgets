@@ -3,6 +3,7 @@ edition      = "2024"
 name         = "widgets"
 rust-version = "1.88"
 version      = "0.1.0"
+build        = "build/main.rs"
 
 [[bin]]
 name = "widgets"
@@ -70,6 +71,9 @@ embassy-sync = "0.6.2"
 heapless = "0.8.0"
 wasmi = { version = "1.1.0", default-features = false }
 
+
+[build-dependencies]
+syn = { version = "2", features = ["full"] }
 
 # For fine tuning these settings, please refer to https://doc.rust-lang.org/cargo/reference/profiles.html
 [profile.dev]

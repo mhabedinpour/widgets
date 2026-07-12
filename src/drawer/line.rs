@@ -1,10 +1,13 @@
 use crate::drawer::{Color, Drawer, Point};
 
+/// @wasm module="drawer_backend" fn="draw_line" executor="execute_line" required="start,end"
 #[derive(Clone, Copy)]
 pub struct LineData {
     pub start: Point,
     pub end: Point,
+    /// @default Color::WHITE
     pub color: Color,
+    /// @default 1
     pub thickness: u32,
 }
 

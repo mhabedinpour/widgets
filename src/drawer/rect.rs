@@ -1,11 +1,16 @@
 use crate::drawer::{Color, Drawer, Point, Rect, Size};
 
+/// @wasm module="drawer_backend" fn="draw_rect" executor="execute_rect" required="rect"
 #[derive(Clone, Copy)]
 pub struct RectData {
     pub rect: Rect,
+    /// @default Color::WHITE
     pub color: Color,
+    /// @default true
     pub fill: bool,
+    /// @default 0 @setter stroke
     pub stroke_width: u32,
+    /// @default 0 @setter rounded
     pub corner_radius: u32,
 }
 

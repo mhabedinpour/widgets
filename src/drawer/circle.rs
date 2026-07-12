@@ -1,11 +1,15 @@
 use crate::drawer::{Color, Drawer, Point};
 
+/// @wasm module="drawer_backend" fn="draw_circle" executor="execute_circle" required="center,radius"
 #[derive(Clone, Copy)]
 pub struct CircleData {
     pub center: Point,
     pub radius: u32,
+    /// @default Color::WHITE
     pub color: Color,
+    /// @default true
     pub fill: bool,
+    /// @default 0 @setter stroke
     pub stroke_width: u32,
 }
 

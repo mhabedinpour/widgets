@@ -43,3 +43,10 @@ impl Rect {
         Rect { origin, size }
     }
 }
+
+/// @wasm module="drawer" fn="clear" executor="execute_clear" required=""
+#[derive(Clone, Copy)]
+pub struct ClearData {
+    /// @default Color::BLACK
+    pub color: Color,
+}

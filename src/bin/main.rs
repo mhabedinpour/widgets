@@ -26,8 +26,9 @@ use esp_hub75::Hub75Pins16;
 use log::info;
 use static_cell::make_static;
 use widgets::backend::i2s::{I2S64x64Flusher, I2s64x64};
+use widgets::compiled_widgets;
 use widgets::drawer::{Point, Rect, Size};
-use widgets::widget::executor::test::TestExec;
+use widgets::widget::executor::wasm::WasmExecutor;
 use widgets::widget::manager::WidgetManager;
 use widgets::widget::{Widget, WidgetId};
 
@@ -78,7 +79,7 @@ async fn main(spawner: Spawner) -> ! {
     let _ = peripherals.GPIO16;
     let _ = peripherals.GPIO20;
 
-    esp_alloc::heap_allocator!(size: 32 * 1024);
+    esp_alloc::heap_allocator!(size: 48 * 1024);
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 98768);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
@@ -123,64 +124,8 @@ async fn main(spawner: Spawner) -> ! {
     manager.add_widget(
         WidgetId::new(1),
         Widget {
-            placement: Rect::new(Point::new(0, 10), Size::new(14, 20)),
-            executor: Box::new(TestExec {}),
-        },
-    );
-    manager.add_widget(
-        WidgetId::new(2),
-        Widget {
-            placement: Rect::new(Point::new(0, 30), Size::new(14, 20)),
-            executor: Box::new(TestExec {}),
-        },
-    );
-    manager.add_widget(
-        WidgetId::new(3),
-        Widget {
-            placement: Rect::new(Point::new(0, 50), Size::new(14, 20)),
-            executor: Box::new(TestExec {}),
-        },
-    );
-    manager.add_widget(
-        WidgetId::new(4),
-        Widget {
-            placement: Rect::new(Point::new(30, 10), Size::new(14, 20)),
-            executor: Box::new(TestExec {}),
-        },
-    );
-    manager.add_widget(
-        WidgetId::new(5),
-        Widget {
-            placement: Rect::new(Point::new(30, 30), Size::new(14, 20)),
-            executor: Box::new(TestExec {}),
-        },
-    );
-    manager.add_widget(
-        WidgetId::new(6),
-        Widget {
-            placement: Rect::new(Point::new(30, 50), Size::new(14, 20)),
-            executor: Box::new(TestExec {}),
-        },
-    );
-    manager.add_widget(
-        WidgetId::new(7),
-        Widget {
-            placement: Rect::new(Point::new(50, 10), Size::new(14, 20)),
-            executor: Box::new(TestExec {}),
-        },
-    );
-    manager.add_widget(
-        WidgetId::new(8),
-        Widget {
-            placement: Rect::new(Point::new(50, 30), Size::new(14, 20)),
-            executor: Box::new(TestExec {}),
-        },
-    );
-    manager.add_widget(
-        WidgetId::new(9),
-        Widget {
-            placement: Rect::new(Point::new(50, 50), Size::new(14, 20)),
-            executor: Box::new(TestExec {}),
+            placement: Rect::new(Point::new(0, 0), Size::new(64, 64)),
+            executor: Box::new(WasmExecutor::new(compiled_widgets::SAMPLE).unwrap()),
         },
     );
 

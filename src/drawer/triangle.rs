@@ -1,12 +1,16 @@
 use crate::drawer::{Color, Drawer, Point};
 
+/// @wasm module="drawer_backend" fn="draw_triangle" executor="execute_triangle" required="p1,p2,p3"
 #[derive(Clone, Copy)]
 pub struct TriangleData {
     pub p1: Point,
     pub p2: Point,
     pub p3: Point,
+    /// @default Color::WHITE
     pub color: Color,
+    /// @default true
     pub fill: bool,
+    /// @default 0 @setter stroke
     pub stroke_width: u32,
 }
 

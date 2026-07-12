@@ -1,4 +1,6 @@
-use crate::drawer::{CircleData, Color, Drawer, LineData, Rect, RectData, TextData, TriangleData};
+use crate::drawer::{
+    CircleData, ClearData, Color, Drawer, LineData, Rect, RectData, TextData, TriangleData,
+};
 use alloc::boxed::Box;
 use embedded_graphics::{
     mono_font::{MonoTextStyle, ascii::FONT_6X10},
@@ -129,11 +131,11 @@ impl<T: DrawTarget<Color = Rgb888>> Drawer for EmbeddedGraphicsDrawer<T> {
         .ok();
     }
 
-    fn execute_clear(&mut self, color: Color) {
+    fn execute_clear(&mut self, data: ClearData) {
         self.target
             .clipped(&self.clip)
             .cropped(&self.clip)
-            .clear(color_to_rgb888(color))
+            .clear(color_to_rgb888(data.color))
             .ok();
     }
 

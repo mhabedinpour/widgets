@@ -1,9 +1,11 @@
 use crate::drawer::{Color, Drawer, Point};
 
+/// @wasm module="drawer_backend" fn="draw_text" executor="execute_text" required="text,position"
 #[derive(Clone, Copy)]
 pub struct TextData<'a> {
     pub text: &'a str,
     pub position: Point,
+    /// @default Color::WHITE
     pub color: Color,
 }
 
