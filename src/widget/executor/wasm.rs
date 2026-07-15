@@ -3,7 +3,7 @@ use crate::widget::executor::{Context, Executor};
 use core::ptr::NonNull;
 use wasmi::{Caller, Config, Engine, Linker, Module, Store, StoreLimits, StoreLimitsBuilder, TypedFunc};
 
-const MAX_WASM_MEMORY_BYTES: usize = 10240;
+const MAX_WASM_MEMORY_BYTES: usize = 100 * 1024;
 
 trait HostModule {
     fn name(&self) -> &str;
@@ -25,8 +25,6 @@ impl WasmCtx {
             drawer: None,
             limits: StoreLimitsBuilder::new()
                 .memory_size(MAX_WASM_MEMORY_BYTES)
-                .memories(1)
-                .instances(1)
                 .build(),
         }
     }
@@ -113,6 +111,10 @@ impl WasmExecutor {
     ) -> Result<Self, wasmi::Error> {
         let mut config = Config::default();
         config.consume_fuel(false);
+        config.set_min_stack_height(512);
+        config.set_max_stack_height(4 * 1024);
+        config.set_max_cached_stacks(0);
+
         let engine = Engine::new(&config);
         let module = Module::new(&engine, wasm_binary)?;
 

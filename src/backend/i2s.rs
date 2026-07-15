@@ -65,7 +65,7 @@ macro_rules! define_i2s_backend {
         impl $drawer_name {
             fn send_copy(&mut self) {
                 let _ = self.channel.try_receive();
-                let _ = self.channel.try_send(Box::new(*self.drawer.target()));
+                let _ = self.channel.try_send(self.drawer.clone_target());
             }
         }
 

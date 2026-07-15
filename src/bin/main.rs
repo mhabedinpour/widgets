@@ -49,7 +49,7 @@ fn init_display_flusher(
     sw_int: SoftwareInterrupt<'static, 1>,
     flusher: I2S64x64Flusher<'static>,
 ) {
-    let app_core_stack: &'static mut Stack<16384> = make_static!(Stack::<16384>::new());
+    let app_core_stack: &'static mut Stack<2048> = make_static!(Stack::<2048>::new());
     esp_rtos::start_second_core(cpu_ctrl, sw_int, app_core_stack, move || {
         flush_task(flusher);
     });
@@ -79,8 +79,8 @@ async fn main(spawner: Spawner) -> ! {
     let _ = peripherals.GPIO16;
     let _ = peripherals.GPIO20;
 
-    esp_alloc::heap_allocator!(size: 48 * 1024);
-    esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 98768);
+    esp_alloc::heap_allocator!(size: 96 * 1024);
+    esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 96 * 1024);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let sw_interrupt = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
@@ -110,7 +110,7 @@ async fn main(spawner: Spawner) -> ! {
     };
     let i2s = peripherals.I2S0.into();
     let dma = peripherals.DMA_I2S0;
-    let freq = Rate::from_mhz(16);
+    let freq = Rate::from_mhz(15);
 
     let mut backend = I2s64x64::new(pins, i2s, dma, freq);
     let mut manager = WidgetManager::new(&mut backend.1);
@@ -130,6 +130,9 @@ async fn main(spawner: Spawner) -> ! {
     );
 
     manager.render();
+
+    let stats = esp_alloc::HEAP.stats();
+    info!("{}", stats);
 
     loop {
         Timer::after_millis(100).await;

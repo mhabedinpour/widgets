@@ -107,7 +107,13 @@ fn build_widgets(skip: &[&str]) {
                 .arg(path.file_name().unwrap())
                 .arg("-o")
                 .arg(&wasm_path)
-                .arg("--optimize")
+                .arg("-Osize")
+                .arg("--optimizeLevel")
+                .arg("3")
+                .arg("--shrinkLevel")
+                .arg("2")
+                .arg("--runtime")
+                .arg("incremental")
                 .status()
                 .expect("failed to execute asc");
 

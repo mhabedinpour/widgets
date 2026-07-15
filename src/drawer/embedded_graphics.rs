@@ -16,12 +16,12 @@ pub fn color_to_rgb888(color: Color) -> Rgb888 {
     }
 }
 
-pub struct EmbeddedGraphicsDrawer<T: DrawTarget<Color = Rgb888>> {
+pub struct EmbeddedGraphicsDrawer<T: DrawTarget<Color = Rgb888> + Clone> {
     target: Box<T>,
     clip: Rectangle,
 }
 
-impl<T: DrawTarget<Color = Rgb888>> EmbeddedGraphicsDrawer<T> {
+impl<T: DrawTarget<Color = Rgb888> + Clone> EmbeddedGraphicsDrawer<T> {
     pub fn root(target: Box<T>, size: crate::drawer::Size) -> EmbeddedGraphicsDrawer<T> {
         let base_rect = Rectangle::new(Point::new(0, 0), Size::new(size.width, size.height));
 
@@ -31,12 +31,12 @@ impl<T: DrawTarget<Color = Rgb888>> EmbeddedGraphicsDrawer<T> {
         }
     }
 
-    pub fn target(&mut self) -> &mut T {
-        &mut self.target
+    pub fn clone_target(&mut self) -> Box<T> {
+        self.target.clone()
     }
 }
 
-impl<T: DrawTarget<Color = Rgb888>> Drawer for EmbeddedGraphicsDrawer<T> {
+impl<T: DrawTarget<Color = Rgb888> + Clone> Drawer for EmbeddedGraphicsDrawer<T> {
     fn execute_rect(&mut self, data: RectData) {
         let c = color_to_rgb888(data.color);
         let mut style = PrimitiveStyleBuilder::new();
