@@ -1,3 +1,4 @@
+pub mod events;
 pub mod model;
 pub mod parser;
 pub mod rust_wasm;

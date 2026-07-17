@@ -1,5 +1,5 @@
-import { Drawer } from "./drawer";
-import { Color, Point, Rect } from "./types";
+import { Drawer } from "./lib/drawer";
+import { Color, Point, Rect } from "./lib/types";
 
 const drawer = new Drawer();
 

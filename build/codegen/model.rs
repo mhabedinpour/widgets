@@ -46,3 +46,21 @@ pub enum ReturnType {
     /// Returns an `i32`.
     I32,
 }
+
+/// All event variants discovered from the `WidgetEvent` enum.
+pub struct EventsDef {
+    pub variants: Vec<EventVariantDef>,
+}
+
+/// One variant of the `WidgetEvent` enum.
+pub struct EventVariantDef {
+    pub name: String,  // "TimerInterrupt"
+    pub index: usize,  // 0, 1, ...
+    pub fields: Vec<EventFieldDef>,
+}
+
+/// One field within an event variant.
+pub struct EventFieldDef {
+    pub name: String,  // "timer_id"
+    pub ty: FieldType,
+}

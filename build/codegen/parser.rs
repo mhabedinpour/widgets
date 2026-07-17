@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 use syn::{Attribute, Fields, FnArg, Item, TraitItem, Type};
 
+use crate::codegen::model::{EventFieldDef, EventVariantDef, EventsDef};
+
 use crate::codegen::model::{BindingDef, FieldDef, FieldType, ReturnType, ServiceDef};
 
 /// Recursively scan `src_root` for Rust traits annotated with `@wasm` and
@@ -271,6 +273,70 @@ fn extract_after_directive(line: &str, directive: &str) -> String {
     let rest = line[start..].trim();
     let end = rest.find('@').unwrap_or(rest.len());
     rest[..end].trim().to_string()
+}
+
+/// Parse `src/widget/mod.rs` and extract all variants of the `WidgetEvent` enum.
+pub fn scan_events(widget_mod_path: &Path) -> EventsDef {
+    let source = std::fs::read_to_string(widget_mod_path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", widget_mod_path.display()));
+    let file = syn::parse_file(&source)
+        .unwrap_or_else(|e| panic!("cannot parse {}: {e}", widget_mod_path.display()));
+
+    for item in &file.items {
+        if let Item::Enum(e) = item {
+            if e.ident != "WidgetEvent" {
+                continue;
+            }
+
+            let mut variants = Vec::new();
+            for (idx, variant) in e.variants.iter().enumerate() {
+                let variant_name = variant.ident.to_string();
+                let Fields::Named(named) = &variant.fields else {
+                    panic!("WidgetEvent::{variant_name} must use named fields");
+                };
+
+                let fields = named
+                    .named
+                    .iter()
+                    .map(|f| {
+                        let field_name = f.ident.as_ref().unwrap().to_string();
+                        let ty = resolve_event_field_type(&f.ty, &variant_name, &field_name);
+                        EventFieldDef { name: field_name, ty }
+                    })
+                    .collect();
+
+                variants.push(EventVariantDef { name: variant_name, index: idx, fields });
+            }
+
+            return EventsDef { variants };
+        }
+    }
+
+    panic!("WidgetEvent enum not found in {}", widget_mod_path.display());
+}
+
+fn resolve_event_field_type(ty: &Type, variant: &str, field: &str) -> FieldType {
+    match ty {
+        Type::Reference(r) => resolve_event_field_type(&r.elem, variant, field),
+        Type::Path(p) => {
+            let seg = p.path.segments.last().unwrap().ident.to_string();
+            match seg.as_str() {
+                "u32" | "u8" | "u16" | "u64" => FieldType::U32,
+                "i32" | "i8" | "i16" | "i64" => FieldType::U32,
+                "TimerId" => FieldType::TimerId,
+                "usize" => FieldType::Usize,
+                "bool" => FieldType::Bool,
+                "String" | "str" => FieldType::Str,
+                other => panic!(
+                    "Unknown field type `{other}` in WidgetEvent::{variant}::{field}. \
+                     Add it to parser.rs resolve_event_field_type."
+                ),
+            }
+        }
+        other => panic!(
+            "Unsupported type shape in WidgetEvent::{variant}::{field}: {other:?}"
+        ),
+    }
 }
 
 /// Map a `syn::Type` to our `FieldType` enum.

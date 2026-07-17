@@ -19,6 +19,8 @@ trait HostModule {
 struct WasmCtx {
     ctx: Option<Context>,
     limits: StoreLimits,
+    event_queue: Vec<WidgetEvent>,
+    event_cursor: Option<usize>,
 }
 
 impl WasmCtx {
@@ -28,6 +30,8 @@ impl WasmCtx {
             limits: StoreLimitsBuilder::new()
                 .memory_size(MAX_WASM_MEMORY_BYTES)
                 .build(),
+            event_queue: Vec::new(),
+            event_cursor: None,
         }
     }
 }
@@ -39,6 +43,10 @@ include!(concat!(env!("OUT_DIR"), "/drawer_wasm_bindings.rs"));
 struct TimerModule;
 
 include!(concat!(env!("OUT_DIR"), "/timer_wasm_bindings.rs"));
+
+struct EventModule;
+
+include!(concat!(env!("OUT_DIR"), "/event_wasm_bindings.rs"));
 
 struct EnvModule;
 
@@ -97,6 +105,7 @@ impl WasmExecutor {
         DrawerModule.register(&mut linker, &mut store)?;
         TimerModule.register(&mut linker, &mut store)?;
         EnvModule.register(&mut linker, &mut store)?;
+        EventModule.register(&mut linker, &mut store)?;
 
         let instance = linker.instantiate_and_start(&mut store, &module)?;
         let render_func = instance.get_typed_func::<(), ()>(&store, "render")?;
@@ -111,6 +120,9 @@ impl Executor for WasmExecutor {
     }
 
     fn render(&mut self, events: Option<Vec<WidgetEvent>>) {
+        let data = self.store.data_mut();
+        data.event_queue = events.unwrap_or_default();
+        data.event_cursor = None;
         self.render_func.call(&mut self.store, ()).unwrap();
     }
 }

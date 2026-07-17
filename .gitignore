@@ -27,4 +27,4 @@ target/
 
 widgets/node_modules
 widgets/*.wasm
-widgets/drawer.ts
+widgets/lib
