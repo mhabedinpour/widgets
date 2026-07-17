@@ -1,7 +1,9 @@
-use crate::drawer::Drawer;
+use crate::widget::WidgetEvent;
 use crate::widget::executor::{Context, Executor};
-use core::ptr::NonNull;
-use wasmi::{Caller, Config, Engine, Linker, Module, Store, StoreLimits, StoreLimitsBuilder, TypedFunc};
+use alloc::vec::Vec;
+use wasmi::{
+    Caller, Config, Engine, Linker, Module, Store, StoreLimits, StoreLimitsBuilder, TypedFunc,
+};
 
 const MAX_WASM_MEMORY_BYTES: usize = 100 * 1024;
 
@@ -15,28 +17,28 @@ trait HostModule {
 }
 
 struct WasmCtx {
-    drawer: Option<NonNull<dyn Drawer>>,
+    ctx: Option<Context>,
     limits: StoreLimits,
 }
 
 impl WasmCtx {
     fn new() -> Self {
         Self {
-            drawer: None,
+            ctx: None,
             limits: StoreLimitsBuilder::new()
                 .memory_size(MAX_WASM_MEMORY_BYTES)
                 .build(),
         }
-    }
-
-    fn drawer(&self) -> &mut dyn Drawer {
-        unsafe { self.drawer.unwrap().as_mut() }
     }
 }
 
 struct DrawerModule;
 
 include!(concat!(env!("OUT_DIR"), "/drawer_wasm_bindings.rs"));
+
+struct TimerModule;
+
+include!(concat!(env!("OUT_DIR"), "/timer_wasm_bindings.rs"));
 
 struct EnvModule;
 
@@ -59,35 +61,8 @@ impl HostModule for EnvModule {
                  _message: i32,
                  _file_name: i32,
                  _line: i32,
-                 _col: i32| {
-
-                },
+                 _col: i32| {},
             ),
-        )?;
-
-        Ok(())
-    }
-}
-
-struct SystemModule;
-
-impl HostModule for SystemModule {
-    fn name(&self) -> &str {
-        "system"
-    }
-
-    fn register(
-        &self,
-        linker: &mut Linker<WasmCtx>,
-        store: &mut Store<WasmCtx>,
-    ) -> Result<(), wasmi::Error> {
-        linker.define(
-            self.name(),
-            "get_time",
-            wasmi::Func::wrap(store, |_caller: Caller<'_, WasmCtx>| {
-                // TODO
-                0
-            }),
         )?;
 
         Ok(())
@@ -101,14 +76,10 @@ pub struct WasmExecutor {
 
 impl WasmExecutor {
     pub fn new(wasm_binary: &[u8]) -> Result<Self, wasmi::Error> {
-        Self::with_modules(
-            wasm_binary,
-        )
+        Self::with_modules(wasm_binary)
     }
 
-    fn with_modules(
-        wasm_binary: &[u8],
-    ) -> Result<Self, wasmi::Error> {
+    fn with_modules(wasm_binary: &[u8]) -> Result<Self, wasmi::Error> {
         let mut config = Config::default();
         config.consume_fuel(false);
         config.set_min_stack_height(512);
@@ -124,7 +95,7 @@ impl WasmExecutor {
         store.limiter(|ctx| &mut ctx.limits);
 
         DrawerModule.register(&mut linker, &mut store)?;
-        SystemModule.register(&mut linker, &mut store)?;
+        TimerModule.register(&mut linker, &mut store)?;
         EnvModule.register(&mut linker, &mut store)?;
 
         let instance = linker.instantiate_and_start(&mut store, &module)?;
@@ -135,20 +106,11 @@ impl WasmExecutor {
 }
 
 impl Executor for WasmExecutor {
-    fn render(&mut self, ctx: Context) {
-        let drawer = ctx.drawer as *mut dyn Drawer;
+    fn set_ctx(&mut self, ctx: Context) {
+        self.store.data_mut().ctx = Some(ctx);
+    }
 
-        // SAFETY:
-        // `ctx.drawer` is valid for the duration of this render() call.
-        // We temporarily erase its lifetime because wasmi host functions access store data
-        // synchronously while the Wasm render function is executing.
-        // The pointer must be cleared before render() returns.
-        let drawer: *mut (dyn Drawer + 'static) = unsafe { core::mem::transmute(drawer) };
-
-        self.store.data_mut().drawer = NonNull::new(drawer);
-
+    fn render(&mut self, events: Option<Vec<WidgetEvent>>) {
         self.render_func.call(&mut self.store, ()).unwrap();
-
-        self.store.data_mut().drawer = None;
     }
 }

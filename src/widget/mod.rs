@@ -1,21 +1,15 @@
 use crate::drawer::Rect;
 use crate::http::Response;
+use crate::timer::TimerId;
 use crate::widget::executor::Executor;
 use alloc::boxed::Box;
 
 pub mod executor;
 pub mod manager;
 
-pub enum WidgetEvent<'a> {
-    TimerInterrupt {
-        widget_id: u32,
-        timer_id: u32,
-    },
-    HttpResponse {
-        widget_id: u32,
-        request_id: u32,
-        response: Response<'a>,
-    },
+pub enum WidgetEvent {
+    TimerInterrupt { timer_id: TimerId },
+    HttpResponse { request_id: u32, response: Response },
 }
 
 #[derive(Ord, Eq, PartialEq, PartialOrd, Clone, Copy, Debug)]

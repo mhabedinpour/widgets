@@ -1,17 +1,17 @@
 pub mod wasm;
 
 use crate::drawer::Drawer;
+use crate::timer::Timer;
+use crate::widget::WidgetEvent;
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 
-pub struct Context<'a> {
-    pub drawer: &'a mut dyn Drawer,
-}
-
-impl<'a> Context<'a> {
-    pub fn new(drawer: &'a mut dyn Drawer) -> Self {
-        Self { drawer }
-    }
+pub struct Context {
+    pub drawer: Box<dyn Drawer>,
+    pub timer: Box<dyn Timer>,
 }
 
 pub trait Executor {
-    fn render(&mut self, ctx: Context);
+    fn set_ctx(&mut self, ctx: Context);
+    fn render(&mut self, events: Option<Vec<WidgetEvent>>);
 }

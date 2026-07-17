@@ -2,7 +2,7 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use crate::codegen::model::{FieldType, ServiceDef};
-use crate::codegen::type_map::expand_wasm;
+use crate::codegen::type_map::{expand_wasm, rust_return_cast, rust_return_type};
 
 /// Generate `{out_dir}/{service_name}_wasm_bindings.rs`.
 ///
@@ -22,18 +22,8 @@ pub fn generate(service: &ServiceDef, out_dir: &Path) {
     writeln!(buf, "// Source: src/{}/ @wasm annotations", service.name).unwrap();
     writeln!(buf).unwrap();
 
-    writeln!(buf, "use crate::drawer::*;").unwrap();
-    writeln!(buf).unwrap();
-
-    // Determine the WASM module name (all bindings in one service share the same module)
-    let wasm_module = service
-        .bindings
-        .first()
-        .map(|b| b.wasm_module.as_str())
-        .unwrap_or("env");
-
     writeln!(buf, "impl HostModule for {module_struct} {{").unwrap();
-    writeln!(buf, "    fn name(&self) -> &str {{ \"{wasm_module}\" }}").unwrap();
+    writeln!(buf, "    fn name(&self) -> &str {{ \"{}\" }}", service.name).unwrap();
     writeln!(buf).unwrap();
     writeln!(buf, "    fn register(").unwrap();
     writeln!(buf, "        &self,").unwrap();
@@ -43,7 +33,7 @@ pub fn generate(service: &ServiceDef, out_dir: &Path) {
 
     for binding in &service.bindings {
         writeln!(buf).unwrap();
-        writeln!(buf, "        // --- {} ---", binding.wasm_fn).unwrap();
+        writeln!(buf, "        // --- {} ---", binding.executor_method).unwrap();
 
         // Collect all flat WASM params across all fields
         let mut all_params: Vec<String> = Vec::new();
@@ -64,12 +54,17 @@ pub fn generate(service: &ServiceDef, out_dir: &Path) {
 
         writeln!(buf, "        linker.define(").unwrap();
         writeln!(buf, "            self.name(),").unwrap();
-        writeln!(buf, "            \"{}\",", binding.wasm_fn).unwrap();
+        writeln!(buf, "            \"{}\",", binding.executor_method).unwrap();
         writeln!(buf, "            wasmi::Func::wrap(").unwrap();
         writeln!(buf, "                &mut *store,").unwrap();
+
+        let ret_sig = match &binding.return_type {
+            Some(rt) => format!(" -> {}", rust_return_type(rt)),
+            None => String::new(),
+        };
         writeln!(
             buf,
-            "                |mut caller: Caller<'_, WasmCtx>{sep}{param_list}| {{",
+            "                |mut caller: Caller<'_, WasmCtx>{sep}{param_list}|{ret_sig} {{",
             sep = if all_params.is_empty() { "" } else { ", " },
         )
         .unwrap();
@@ -79,12 +74,12 @@ pub fn generate(service: &ServiceDef, out_dir: &Path) {
             emit_str_preamble(&mut buf, &binding.fields);
         }
 
-        // Construct the *Data struct
-        if !binding.fields.is_empty() {
+        // Construct the *Data struct and call the executor method
+        let call_expr = if !binding.fields.is_empty() {
             writeln!(
                 buf,
-                "                    let data = {} {{",
-                binding.data_type
+                "                    let data = crate::{}::{} {{",
+                service.name, binding.data_type
             )
             .unwrap();
             for field in &binding.fields {
@@ -97,19 +92,25 @@ pub fn generate(service: &ServiceDef, out_dir: &Path) {
                 writeln!(buf, "                        {}: {construct},", field.name).unwrap();
             }
             writeln!(buf, "                    }};").unwrap();
-            writeln!(
-                buf,
-                "                    caller.data_mut().{}().{}(data);",
+            format!(
+                "caller.data_mut().ctx.as_mut().unwrap().{}.{}(data)",
                 service.name, binding.executor_method
             )
-            .unwrap();
         } else {
-            writeln!(
-                buf,
-                "                    caller.data_mut().{}().{}();",
+            format!(
+                "caller.data_mut().ctx.as_mut().unwrap().{}.{}()",
                 service.name, binding.executor_method
             )
-            .unwrap();
+        };
+
+        match &binding.return_type {
+            Some(rt) => {
+                let cast = rust_return_cast(rt);
+                writeln!(buf, "                    {call_expr}{cast}").unwrap();
+            }
+            None => {
+                writeln!(buf, "                    {call_expr};").unwrap();
+            }
         }
 
         writeln!(buf, "                }},").unwrap();

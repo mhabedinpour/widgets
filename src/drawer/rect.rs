@@ -1,6 +1,6 @@
 use crate::drawer::{Color, Drawer, Point, Rect, Size};
 
-/// @wasm module="drawer_backend" fn="draw_rect" executor="execute_rect" required="rect"
+/// @wasm required="rect"
 #[derive(Clone, Copy)]
 pub struct RectData {
     pub rect: Rect,

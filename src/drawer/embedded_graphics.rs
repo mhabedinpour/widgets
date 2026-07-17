@@ -1,7 +1,8 @@
 use crate::drawer::{
     CircleData, ClearData, Color, Drawer, LineData, Rect, RectData, TextData, TriangleData,
 };
-use alloc::boxed::Box;
+use alloc::rc::Rc;
+use core::cell::RefCell;
 use embedded_graphics::{
     mono_font::{MonoTextStyle, ascii::FONT_6X10},
     pixelcolor::Rgb888,
@@ -16,27 +17,24 @@ pub fn color_to_rgb888(color: Color) -> Rgb888 {
     }
 }
 
-pub struct EmbeddedGraphicsDrawer<T: DrawTarget<Color = Rgb888> + Clone> {
-    target: Box<T>,
+pub struct EmbeddedGraphicsDrawer<T: DrawTarget<Color = Rgb888>> {
+    target: Rc<RefCell<T>>,
     clip: Rectangle,
 }
 
-impl<T: DrawTarget<Color = Rgb888> + Clone> EmbeddedGraphicsDrawer<T> {
-    pub fn root(target: Box<T>, size: crate::drawer::Size) -> EmbeddedGraphicsDrawer<T> {
-        let base_rect = Rectangle::new(Point::new(0, 0), Size::new(size.width, size.height));
-
+impl<T: DrawTarget<Color = Rgb888>> EmbeddedGraphicsDrawer<T> {
+    pub fn new(target: Rc<RefCell<T>>, clip: Rect) -> EmbeddedGraphicsDrawer<T> {
         EmbeddedGraphicsDrawer {
             target,
-            clip: base_rect,
+            clip: Rectangle::new(
+                Point::new(clip.origin.x as i32, clip.origin.y as i32),
+                Size::new(clip.size.width, clip.size.height),
+            ),
         }
-    }
-
-    pub fn clone_target(&mut self) -> Box<T> {
-        self.target.clone()
     }
 }
 
-impl<T: DrawTarget<Color = Rgb888> + Clone> Drawer for EmbeddedGraphicsDrawer<T> {
+impl<T: DrawTarget<Color = Rgb888>> Drawer for EmbeddedGraphicsDrawer<T> {
     fn execute_rect(&mut self, data: RectData) {
         let c = color_to_rgb888(data.color);
         let mut style = PrimitiveStyleBuilder::new();
@@ -57,12 +55,24 @@ impl<T: DrawTarget<Color = Rgb888> + Clone> Drawer for EmbeddedGraphicsDrawer<T>
                 CornerRadii::new(Size::new(data.corner_radius, data.corner_radius)),
             )
             .into_styled(style.build())
-            .draw(&mut self.target.clipped(&self.clip).cropped(&self.clip))
+            .draw(
+                &mut self
+                    .target
+                    .borrow_mut()
+                    .clipped(&self.clip)
+                    .cropped(&self.clip),
+            )
             .ok();
         } else {
             base_rect
                 .into_styled(style.build())
-                .draw(&mut self.target.clipped(&self.clip).cropped(&self.clip))
+                .draw(
+                    &mut self
+                        .target
+                        .borrow_mut()
+                        .clipped(&self.clip)
+                        .cropped(&self.clip),
+                )
                 .ok();
         }
     }
@@ -81,7 +91,13 @@ impl<T: DrawTarget<Color = Rgb888> + Clone> Drawer for EmbeddedGraphicsDrawer<T>
             data.radius * 2,
         )
         .into_styled(style.build())
-        .draw(&mut self.target.clipped(&self.clip).cropped(&self.clip))
+        .draw(
+            &mut self
+                .target
+                .borrow_mut()
+                .clipped(&self.clip)
+                .cropped(&self.clip),
+        )
         .ok();
     }
 
@@ -100,7 +116,13 @@ impl<T: DrawTarget<Color = Rgb888> + Clone> Drawer for EmbeddedGraphicsDrawer<T>
             Point::new(data.p3.x as i32, data.p3.y as i32),
         )
         .into_styled(style.build())
-        .draw(&mut self.target.clipped(&self.clip).cropped(&self.clip))
+        .draw(
+            &mut self
+                .target
+                .borrow_mut()
+                .clipped(&self.clip)
+                .cropped(&self.clip),
+        )
         .ok();
     }
 
@@ -115,7 +137,13 @@ impl<T: DrawTarget<Color = Rgb888> + Clone> Drawer for EmbeddedGraphicsDrawer<T>
             Point::new(data.end.x as i32, data.end.y as i32),
         )
         .into_styled(style)
-        .draw(&mut self.target.clipped(&self.clip).cropped(&self.clip))
+        .draw(
+            &mut self
+                .target
+                .borrow_mut()
+                .clipped(&self.clip)
+                .cropped(&self.clip),
+        )
         .ok();
     }
 
@@ -127,34 +155,22 @@ impl<T: DrawTarget<Color = Rgb888> + Clone> Drawer for EmbeddedGraphicsDrawer<T>
             Point::new(data.position.x as i32, data.position.y as i32),
             character_style,
         )
-        .draw(&mut self.target.clipped(&self.clip).cropped(&self.clip))
+        .draw(
+            &mut self
+                .target
+                .borrow_mut()
+                .clipped(&self.clip)
+                .cropped(&self.clip),
+        )
         .ok();
     }
 
     fn execute_clear(&mut self, data: ClearData) {
         self.target
+            .borrow_mut()
             .clipped(&self.clip)
             .cropped(&self.clip)
             .clear(color_to_rgb888(data.color))
             .ok();
-    }
-
-    fn with_viewport(&mut self, bounds: Rect, f: &mut dyn FnMut(&mut dyn Drawer)) {
-        let bounds_origin = Point::new(bounds.origin.x as i32, bounds.origin.y as i32);
-        let bounds_size = Size::new(bounds.size.width, bounds.size.height);
-        let viewport_rect = Rectangle::new(bounds_origin, bounds_size);
-
-        let previous_clip = self.clip;
-        self.clip = self
-            .target
-            .clipped(&previous_clip)
-            .clipped(&viewport_rect)
-            .bounding_box();
-
-        let result = f(self);
-
-        self.clip = previous_clip;
-
-        result
     }
 }

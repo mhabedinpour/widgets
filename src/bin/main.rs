@@ -28,6 +28,7 @@ use static_cell::make_static;
 use widgets::backend::i2s::{I2S64x64Flusher, I2s64x64};
 use widgets::compiled_widgets;
 use widgets::drawer::{Point, Rect, Size};
+use widgets::timer::timer::TimerService;
 use widgets::widget::executor::wasm::WasmExecutor;
 use widgets::widget::manager::WidgetManager;
 use widgets::widget::{Widget, WidgetId};
@@ -81,6 +82,7 @@ async fn main(spawner: Spawner) -> ! {
 
     esp_alloc::heap_allocator!(size: 96 * 1024);
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 96 * 1024);
+    esp_alloc::psram_allocator!(peripherals.PSRAM, esp_hal::psram);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let sw_interrupt = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
@@ -112,8 +114,8 @@ async fn main(spawner: Spawner) -> ! {
     let dma = peripherals.DMA_I2S0;
     let freq = Rate::from_mhz(15);
 
-    let mut backend = I2s64x64::new(pins, i2s, dma, freq);
-    let mut manager = WidgetManager::new(&mut backend.1);
+    let backend = I2s64x64::new(pins, i2s, dma, freq);
+    let mut manager = WidgetManager::new(backend.1, TimerService::new());
 
     init_display_flusher(
         peripherals.CPU_CTRL,
@@ -135,6 +137,7 @@ async fn main(spawner: Spawner) -> ! {
     info!("{}", stats);
 
     loop {
-        Timer::after_millis(100).await;
+        manager.poll_events();
+        Timer::after_millis(10).await;
     }
 }

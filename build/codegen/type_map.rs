@@ -1,4 +1,4 @@
-use crate::codegen::model::FieldType;
+use crate::codegen::model::{FieldType, ReturnType};
 
 /// A field expanded into flat WASM u32 parameters and a Rust construction expression.
 pub struct WasmExpansion {
@@ -21,9 +21,9 @@ pub struct TsExpansion {
 
 pub fn expand_wasm(name: &str, ty: &FieldType) -> WasmExpansion {
     match ty {
-        FieldType::U32 => WasmExpansion {
+        FieldType::U32 | FieldType::Usize => WasmExpansion {
             params: vec![name.to_string()],
-            construct: name.to_string(),
+            construct: format!("{name} as _"),
         },
         FieldType::Bool => WasmExpansion {
             params: vec![name.to_string()],
@@ -35,11 +35,11 @@ pub fn expand_wasm(name: &str, ty: &FieldType) -> WasmExpansion {
                 format!("{name}_g"),
                 format!("{name}_b"),
             ],
-            construct: format!("Color::Rgb({name}_r as u8, {name}_g as u8, {name}_b as u8)"),
+            construct: format!("crate::drawer::types::Color::Rgb({name}_r as u8, {name}_g as u8, {name}_b as u8)"),
         },
         FieldType::Point => WasmExpansion {
             params: vec![format!("{name}_x"), format!("{name}_y")],
-            construct: format!("Point {{ x: {name}_x, y: {name}_y }}"),
+            construct: format!("crate::drawer::types::Point {{ x: {name}_x, y: {name}_y }}"),
         },
         FieldType::Rect => WasmExpansion {
             // Rect fields use short names since they're typically the dominant required field
@@ -49,7 +49,7 @@ pub fn expand_wasm(name: &str, ty: &FieldType) -> WasmExpansion {
                 "w".to_string(),
                 "h".to_string(),
             ],
-            construct: "Rect { origin: Point { x, y }, size: Size { width: w, height: h } }"
+            construct: "crate::drawer::types::Rect { origin: crate::drawer::types::Point { x, y }, size: crate::drawer::types::Size { width: w, height: h } }"
                 .to_string(),
         },
         FieldType::Str => WasmExpansion {
@@ -58,6 +58,14 @@ pub fn expand_wasm(name: &str, ty: &FieldType) -> WasmExpansion {
             // block separately and binds it to a variable named `name`.
             construct: format!("__str_{name}"),
         },
+        FieldType::Duration => WasmExpansion {
+            params: vec![name.to_string()],
+            construct: format!("embassy_time::Duration::from_ticks({name} as u64)"),
+        },
+        FieldType::TimerId => WasmExpansion {
+            params: vec![name.to_string()],
+            construct: format!("crate::timer::TimerId({name})"),
+        },
     }
 }
 
@@ -65,7 +73,7 @@ pub fn expand_ts(name: &str, ty: &FieldType, required: bool, default: Option<&st
     let ts_default = default.map(rust_default_to_ts);
 
     match ty {
-        FieldType::U32 => {
+        FieldType::U32 | FieldType::Usize => {
             if required {
                 TsExpansion {
                     ctor_params: vec![(name.to_string(), "u32".to_string())],
@@ -124,59 +132,51 @@ pub fn expand_ts(name: &str, ty: &FieldType, required: bool, default: Option<&st
 
         FieldType::Point => {
             if required {
-                // Required Points expand to two flat u32 ctor args
                 TsExpansion {
-                    ctor_params: vec![
-                        (format!("{name}_x"), "u32".to_string()),
-                        (format!("{name}_y"), "u32".to_string()),
-                    ],
-                    fields: vec![
-                        (format!("_{name}_x"), "u32".to_string(), None),
-                        (format!("_{name}_y"), "u32".to_string(), None),
-                    ],
-                    call_args: vec![format!("this._{name}_x"), format!("this._{name}_y")],
+                    ctor_params: vec![(name.to_string(), "Point".to_string())],
+                    fields: vec![(format!("_{name}"), "Point".to_string(), None)],
+                    call_args: vec![format!("this._{name}.x"), format!("this._{name}.y")],
                 }
             } else {
                 TsExpansion {
                     ctor_params: vec![],
-                    fields: vec![
-                        (
-                            format!("_{name}_x"),
-                            "u32".to_string(),
-                            Some("0".to_string()),
-                        ),
-                        (
-                            format!("_{name}_y"),
-                            "u32".to_string(),
-                            Some("0".to_string()),
-                        ),
-                    ],
-                    call_args: vec![format!("this._{name}_x"), format!("this._{name}_y")],
+                    fields: vec![(
+                        format!("_{name}"),
+                        "Point".to_string(),
+                        Some(ts_default.unwrap_or_else(|| "new Point(0, 0)".to_string())),
+                    )],
+                    call_args: vec![format!("this._{name}.x"), format!("this._{name}.y")],
                 }
             }
         }
 
         FieldType::Rect => {
-            // Rect always required (it's the geometry of the shape)
-            TsExpansion {
-                ctor_params: vec![
-                    ("x".to_string(), "u32".to_string()),
-                    ("y".to_string(), "u32".to_string()),
-                    ("w".to_string(), "u32".to_string()),
-                    ("h".to_string(), "u32".to_string()),
-                ],
-                fields: vec![
-                    ("_x".to_string(), "u32".to_string(), None),
-                    ("_y".to_string(), "u32".to_string(), None),
-                    ("_w".to_string(), "u32".to_string(), None),
-                    ("_h".to_string(), "u32".to_string(), None),
-                ],
-                call_args: vec![
-                    "this._x".to_string(),
-                    "this._y".to_string(),
-                    "this._w".to_string(),
-                    "this._h".to_string(),
-                ],
+            if required {
+                TsExpansion {
+                    ctor_params: vec![(name.to_string(), "Rect".to_string())],
+                    fields: vec![(format!("_{name}"), "Rect".to_string(), None)],
+                    call_args: vec![
+                        format!("this._{name}.x"),
+                        format!("this._{name}.y"),
+                        format!("this._{name}.width"),
+                        format!("this._{name}.height"),
+                    ],
+                }
+            } else {
+                TsExpansion {
+                    ctor_params: vec![],
+                    fields: vec![(
+                        format!("_{name}"),
+                        "Rect".to_string(),
+                        Some(ts_default.unwrap_or_else(|| "new Rect(0, 0, 0, 0)".to_string())),
+                    )],
+                    call_args: vec![
+                        format!("this._{name}.x"),
+                        format!("this._{name}.y"),
+                        format!("this._{name}.width"),
+                        format!("this._{name}.height"),
+                    ],
+                }
             }
         }
 
@@ -189,6 +189,73 @@ pub fn expand_ts(name: &str, ty: &FieldType, required: bool, default: Option<&st
                 call_args: vec![format!("__{name}_ptr"), format!("__{name}_len")],
             }
         }
+
+        FieldType::Duration => {
+            if required {
+                TsExpansion {
+                    ctor_params: vec![(name.to_string(), "Duration".to_string())],
+                    fields: vec![(format!("_{name}"), "Duration".to_string(), None)],
+                    call_args: vec![format!("this._{name}.ticks")],
+                }
+            } else {
+                TsExpansion {
+                    ctor_params: vec![],
+                    fields: vec![(
+                        format!("_{name}"),
+                        "Duration".to_string(),
+                        Some(ts_default.unwrap_or_else(|| "new Duration(0)".to_string())),
+                    )],
+                    call_args: vec![format!("this._{name}.ticks")],
+                }
+            }
+        }
+
+        FieldType::TimerId => {
+            if required {
+                TsExpansion {
+                    ctor_params: vec![(name.to_string(), "u32".to_string())],
+                    fields: vec![(format!("_{name}"), "u32".to_string(), None)],
+                    call_args: vec![format!("this._{name}")],
+                }
+            } else {
+                TsExpansion {
+                    ctor_params: vec![],
+                    fields: vec![(
+                        format!("_{name}"),
+                        "u32".to_string(),
+                        Some(ts_default.unwrap_or_else(|| "0".to_string())),
+                    )],
+                    call_args: vec![format!("this._{name}")],
+                }
+            }
+        }
+    }
+}
+
+/// The Rust primitive type used for a return value in the Wasmi closure signature.
+/// Bool uses `u32` since WASM has no bool type.
+pub fn rust_return_type(rt: &ReturnType) -> &'static str {
+    match rt {
+        ReturnType::U32 | ReturnType::Bool => "u32",
+        ReturnType::I32 => "i32",
+    }
+}
+
+/// A suffix cast applied after the executor method call to coerce its Rust return
+/// type to the WASM primitive. Empty string means no cast is needed.
+pub fn rust_return_cast(rt: &ReturnType) -> &'static str {
+    match rt {
+        ReturnType::U32 | ReturnType::I32 => "",
+        ReturnType::Bool => " as u32",
+    }
+}
+
+/// The AssemblyScript / TypeScript type for a return value.
+pub fn ts_return_type(rt: &ReturnType) -> &'static str {
+    match rt {
+        ReturnType::U32 => "u32",
+        ReturnType::Bool => "bool",
+        ReturnType::I32 => "i32",
     }
 }
 

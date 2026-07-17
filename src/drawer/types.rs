@@ -44,7 +44,6 @@ impl Rect {
     }
 }
 
-/// @wasm module="drawer" fn="clear" executor="execute_clear" required=""
 #[derive(Clone, Copy)]
 pub struct ClearData {
     /// @default Color::BLACK

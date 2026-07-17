@@ -4,6 +4,7 @@ extern crate alloc;
 pub mod backend;
 pub mod drawer;
 pub mod http;
+pub mod timer;
 pub mod widget;
 
 pub mod compiled_widgets {

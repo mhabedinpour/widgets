@@ -1,18 +1,20 @@
-/// All bindings discovered from one source directory (e.g. src/drawer/).
+/// All bindings discovered for one service trait.
 pub struct ServiceDef {
     pub name: String,
     pub bindings: Vec<BindingDef>,
 }
 
-/// One WASM host function derived from a single `*Data` struct.
+/// One WASM host function binding derived from a trait method.
 pub struct BindingDef {
-    pub wasm_module: String,     // "env"
-    pub wasm_fn: String,         // "draw_rect"
-    pub executor_method: String, // "execute_rect"
+    pub executor_method: String, // "execute_rect" — also used as the WASM export name
+    pub builder_name: String,    // "rect" — used for TS factory method and builder class name
     pub data_type: String,       // "RectData"
     pub fields: Vec<FieldDef>,
+    /// Return type inferred from the trait method signature. `None` means void.
+    pub return_type: Option<ReturnType>,
 }
 
+#[derive(Clone)]
 pub struct FieldDef {
     pub name: String,
     pub ty: FieldType,
@@ -24,9 +26,23 @@ pub struct FieldDef {
 #[derive(Clone, Debug, PartialEq)]
 pub enum FieldType {
     U32,
+    Usize,
     Bool,
     Point,
     Rect,
     Color,
     Str,
+    Duration,
+    TimerId,
+}
+
+/// Return type of a WASM host function.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ReturnType {
+    /// Returns a `u32` (also used for pointer-sized values).
+    U32,
+    /// Returns a `bool` (passed over the ABI as a `u32`: 0 or 1).
+    Bool,
+    /// Returns an `i32`.
+    I32,
 }

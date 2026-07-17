@@ -1,9 +1,8 @@
-use crate::drawer::{
-    CircleData, ClearData, Color, Drawer, EmbeddedGraphicsDrawer, LineData, Rect, RectData, Size,
-    TextData, TriangleData,
-};
+use crate::drawer::{Drawer, EmbeddedGraphicsDrawer, GlobalDrawer, Rect};
 use alloc::boxed::Box;
+use alloc::rc::Rc;
 use alloc::sync::Arc;
+use core::cell::RefCell;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use esp_hal::Blocking;
@@ -58,45 +57,18 @@ macro_rules! define_i2s_backend {
         }
 
         pub struct $drawer_name {
-            drawer: EmbeddedGraphicsDrawer<$fb_name>,
+            fb: Rc<RefCell<$fb_name>>,
             channel: Arc<FBChannel>,
         }
 
-        impl $drawer_name {
-            fn send_copy(&mut self) {
-                let _ = self.channel.try_receive();
-                let _ = self.channel.try_send(self.drawer.clone_target());
+        impl GlobalDrawer for $drawer_name {
+            fn scoped(&self, bounds: Rect) -> Box<dyn Drawer> {
+                Box::new(EmbeddedGraphicsDrawer::new(Rc::clone(&self.fb), bounds))
             }
-        }
 
-        impl Drawer for $drawer_name {
-            fn execute_rect(&mut self, data: RectData) {
-                self.drawer.execute_rect(data);
-                self.send_copy();
-            }
-            fn execute_circle(&mut self, data: CircleData) {
-                self.drawer.execute_circle(data);
-                self.send_copy();
-            }
-            fn execute_triangle(&mut self, data: TriangleData) {
-                self.drawer.execute_triangle(data);
-                self.send_copy();
-            }
-            fn execute_line(&mut self, data: LineData) {
-                self.drawer.execute_line(data);
-                self.send_copy();
-            }
-            fn execute_text(&mut self, data: TextData<'_>) {
-                self.drawer.execute_text(data);
-                self.send_copy();
-            }
-            fn execute_clear(&mut self, data: ClearData) {
-                self.drawer.execute_clear(data);
-                self.send_copy();
-            }
-            fn with_viewport(&mut self, bounds: Rect, f: &mut dyn FnMut(&mut dyn Drawer)) {
-                self.drawer.with_viewport(bounds, f);
-                self.send_copy();
+            fn flush(&self) {
+                let _ = self.channel.try_receive();
+                let _ = self.channel.try_send(Box::from(self.fb.borrow().clone()));
             }
         }
 
@@ -112,19 +84,8 @@ macro_rules! define_i2s_backend {
                 let hub75 = Hub75::new(i2s, pins, dma, tx_descriptors, freq)
                     .expect("failed to create Hub75!");
 
-                let mut drawer = EmbeddedGraphicsDrawer::root(
-                    Box::new($fb_name::new()),
-                    Size {
-                        width: $cols,
-                        height: $rows,
-                    },
-                );
-                drawer.execute_clear(ClearData {
-                    color: Color::Rgb(0, 0, 0),
-                });
-
+                let fb = Rc::new(RefCell::new($fb_name::new()));
                 let ch = Arc::new(FBChannel::new());
-                let _ = ch.try_receive();
 
                 $name(
                     $flusher_name {
@@ -132,10 +93,7 @@ macro_rules! define_i2s_backend {
                         fb: None,
                         channel: ch.clone(),
                     },
-                    $drawer_name {
-                        drawer,
-                        channel: ch,
-                    },
+                    $drawer_name { fb, channel: ch },
                 )
             }
         }
