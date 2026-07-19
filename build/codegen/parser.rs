@@ -301,18 +301,28 @@ pub fn scan_events(widget_mod_path: &Path) -> EventsDef {
                     .map(|f| {
                         let field_name = f.ident.as_ref().unwrap().to_string();
                         let ty = resolve_event_field_type(&f.ty, &variant_name, &field_name);
-                        EventFieldDef { name: field_name, ty }
+                        EventFieldDef {
+                            name: field_name,
+                            ty,
+                        }
                     })
                     .collect();
 
-                variants.push(EventVariantDef { name: variant_name, index: idx, fields });
+                variants.push(EventVariantDef {
+                    name: variant_name,
+                    index: idx,
+                    fields,
+                });
             }
 
             return EventsDef { variants };
         }
     }
 
-    panic!("WidgetEvent enum not found in {}", widget_mod_path.display());
+    panic!(
+        "WidgetEvent enum not found in {}",
+        widget_mod_path.display()
+    );
 }
 
 fn resolve_event_field_type(ty: &Type, variant: &str, field: &str) -> FieldType {
@@ -333,9 +343,7 @@ fn resolve_event_field_type(ty: &Type, variant: &str, field: &str) -> FieldType 
                 ),
             }
         }
-        other => panic!(
-            "Unsupported type shape in WidgetEvent::{variant}::{field}: {other:?}"
-        ),
+        other => panic!("Unsupported type shape in WidgetEvent::{variant}::{field}: {other:?}"),
     }
 }
 

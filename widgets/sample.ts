@@ -4,7 +4,7 @@ import { Color, Point, Rect } from "./lib/types";
 const drawer = new Drawer();
 
 export function render(): void {
-  drawer.rect(new Rect(0, 0, 10, 10)).color(new Color(255, 0, 0)).execute();
+  drawer.rect(new Rect(0, 30, 10, 10)).color(new Color(255, 0, 0)).execute();
   drawer.circle(new Point(20, 20), 6).color(new Color(0, 255, 0)).execute();
   drawer.line(new Point(30, 30), new Point(40, 40)).color(new Color(0, 0, 255)).thickness(2).execute();
   drawer.text("Hello WASM!", new Point(20, 25)).color(Color.WHITE).execute();

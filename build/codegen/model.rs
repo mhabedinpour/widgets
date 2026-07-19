@@ -54,13 +54,13 @@ pub struct EventsDef {
 
 /// One variant of the `WidgetEvent` enum.
 pub struct EventVariantDef {
-    pub name: String,  // "TimerInterrupt"
-    pub index: usize,  // 0, 1, ...
+    pub name: String, // "TimerInterrupt"
+    pub index: usize, // 0, 1, ...
     pub fields: Vec<EventFieldDef>,
 }
 
 /// One field within an event variant.
 pub struct EventFieldDef {
-    pub name: String,  // "timer_id"
+    pub name: String, // "timer_id"
     pub ty: FieldType,
 }

@@ -7,6 +7,8 @@
 )]
 #![deny(clippy::large_stack_frames)]
 #![feature(type_alias_impl_trait)]
+#![feature(allocator_api)]
+extern crate alloc;
 #[allow(
     clippy::large_stack_frames,
     reason = "it's not unusual to allocate larger buffers etc. in main"
@@ -25,7 +27,7 @@ use esp_hal::timer::timg::TimerGroup;
 use esp_hub75::Hub75Pins16;
 use log::info;
 use static_cell::make_static;
-use widgets::backend::i2s::{I2S64x64Flusher, I2s64x64};
+use widgets::backend::lcd::{LCDCAM64x64, LCDCAM64x64Flusher};
 use widgets::compiled_widgets;
 use widgets::drawer::{Point, Rect, Size};
 use widgets::timer::timer::TimerService;
@@ -33,13 +35,11 @@ use widgets::widget::executor::wasm::WasmExecutor;
 use widgets::widget::manager::WidgetManager;
 use widgets::widget::{Widget, WidgetId};
 
-extern crate alloc;
-
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
 esp_bootloader_esp_idf::esp_app_desc!();
 
-fn flush_task(mut flusher: I2S64x64Flusher<'static>) -> ! {
+fn flush_task(mut flusher: LCDCAM64x64Flusher<'static>) -> ! {
     loop {
         flusher.flush().expect("Failed to flush display");
     }
@@ -48,7 +48,7 @@ fn flush_task(mut flusher: I2S64x64Flusher<'static>) -> ! {
 fn init_display_flusher(
     cpu_ctrl: CPU_CTRL,
     sw_int: SoftwareInterrupt<'static, 1>,
-    flusher: I2S64x64Flusher<'static>,
+    flusher: LCDCAM64x64Flusher<'static>,
 ) {
     let app_core_stack: &'static mut Stack<2048> = make_static!(Stack::<2048>::new());
     esp_rtos::start_second_core(cpu_ctrl, sw_int, app_core_stack, move || {
@@ -63,25 +63,8 @@ async fn main(spawner: Spawner) -> ! {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
-    // The following pins are used to bootstrap the chip. They are available
-    // for use, but check the datasheet of the module for more information on them.
-    // - GPIO0
-    // - GPIO2
-    // - GPIO5
-    // - GPIO12
-    // - GPIO15
-    // These GPIO pins are in use by some feature of the module and should not be used.
-    let _ = peripherals.GPIO6;
-    let _ = peripherals.GPIO7;
-    let _ = peripherals.GPIO8;
-    let _ = peripherals.GPIO9;
-    let _ = peripherals.GPIO10;
-    let _ = peripherals.GPIO11;
-    let _ = peripherals.GPIO16;
-    let _ = peripherals.GPIO20;
-
     esp_alloc::heap_allocator!(size: 96 * 1024);
-    esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 96 * 1024);
+    esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 64000);
     esp_alloc::psram_allocator!(peripherals.PSRAM, esp_hal::psram);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
@@ -95,26 +78,24 @@ async fn main(spawner: Spawner) -> ! {
             .expect("Failed to initialize Wi-Fi controller");
 
     let pins = Hub75Pins16 {
-        red1: peripherals.GPIO25.degrade(),
-        grn1: peripherals.GPIO26.degrade(),
-        blu1: peripherals.GPIO27.degrade(),
-        red2: peripherals.GPIO14.degrade(),
-        grn2: peripherals.GPIO12.degrade(),
-        blu2: peripherals.GPIO13.degrade(),
-        addr0: peripherals.GPIO19.degrade(),
-        addr1: peripherals.GPIO18.degrade(),
-        addr2: peripherals.GPIO5.degrade(),
-        addr3: peripherals.GPIO17.degrade(),
-        addr4: peripherals.GPIO21.degrade(),
-        blank: peripherals.GPIO15.degrade(),
-        clock: peripherals.GPIO16.degrade(),
-        latch: peripherals.GPIO4.degrade(),
+        red1: peripherals.GPIO5.degrade(),
+        grn1: peripherals.GPIO6.degrade(),
+        blu1: peripherals.GPIO7.degrade(),
+        red2: peripherals.GPIO15.degrade(),
+        grn2: peripherals.GPIO16.degrade(),
+        blu2: peripherals.GPIO17.degrade(),
+        addr0: peripherals.GPIO8.degrade(),
+        addr1: peripherals.GPIO3.degrade(),
+        addr2: peripherals.GPIO46.degrade(),
+        addr3: peripherals.GPIO9.degrade(),
+        addr4: peripherals.GPIO18.degrade(),
+        blank: peripherals.GPIO12.degrade(),
+        clock: peripherals.GPIO10.degrade(),
+        latch: peripherals.GPIO11.degrade(),
     };
-    let i2s = peripherals.I2S0.into();
-    let dma = peripherals.DMA_I2S0;
-    let freq = Rate::from_mhz(15);
+    let freq = Rate::from_mhz(20);
 
-    let backend = I2s64x64::new(pins, i2s, dma, freq);
+    let backend = LCDCAM64x64::new(pins, peripherals.LCD_CAM, peripherals.DMA_CH0, freq);
     let mut manager = WidgetManager::new(backend.1, TimerService::new());
 
     init_display_flusher(
@@ -132,9 +113,6 @@ async fn main(spawner: Spawner) -> ! {
     );
 
     manager.render();
-
-    let stats = esp_alloc::HEAP.stats();
-    info!("{}", stats);
 
     loop {
         manager.poll_events();

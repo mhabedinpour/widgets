@@ -1,1 +1,1 @@
-pub mod i2s;
+pub mod lcd;

@@ -37,6 +37,7 @@ impl<D: GlobalDrawer, T: GlobalTimer> WidgetManager<D, T> {
         for (_, widget) in self.widgets.iter_mut() {
             widget.executor.render(None);
         }
+        self.drawer.flush();
     }
 
     pub fn poll_events(&mut self) {
@@ -50,6 +51,8 @@ impl<D: GlobalDrawer, T: GlobalTimer> WidgetManager<D, T> {
                 .executor
                 .render(Some(event_list));
         }
+
+        self.drawer.flush();
     }
 
     pub fn handle_timer_events(&mut self, events: &mut BTreeMap<WidgetId, Vec<WidgetEvent>>) {
