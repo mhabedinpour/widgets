@@ -27,7 +27,7 @@ pub trait Drawer {
     /// @wasm builder_name="line"
     fn execute_line(&mut self, data: LineData);
     /// @wasm builder_name="text"
-    fn execute_text(&mut self, data: TextData<'_>);
+    fn execute_text(&mut self, data: TextData);
     /// @wasm builder_name="clear"
     fn execute_clear(&mut self, data: ClearData);
 }

@@ -9,7 +9,7 @@ pub mod manager;
 
 pub enum WidgetEvent {
     TimerInterrupt { timer_id: TimerId },
-    HttpResponse { request_id: u32, text: String },
+    HttpResponse { request_id: u32, headers: String, body: String, success: bool },
 }
 
 #[derive(Ord, Eq, PartialEq, PartialOrd, Clone, Copy, Debug)]

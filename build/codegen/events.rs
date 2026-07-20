@@ -2,6 +2,7 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use crate::codegen::model::{EventVariantDef, EventsDef, FieldType};
+use crate::codegen::type_map::expand_ts;
 
 /// Generate `{out_dir}/event_wasm_bindings.rs`.
 ///
@@ -329,7 +330,8 @@ pub fn generate_ts(events: &EventsDef, out_path: &Path) {
         // Field declarations
         for field in &variant.fields {
             let field_ts = to_lower_camel_case(&field.name);
-            let ty = ts_field_type(&field.ty);
+            let exp = expand_ts(&field.name, &field.ty, true, None);
+            let ty = exp.ctor_params.first().map(|(_, t)| t.as_str()).unwrap_or("u32");
             writeln!(buf, "  readonly {field_ts}: {ty};").unwrap();
         }
 
@@ -337,7 +339,11 @@ pub fn generate_ts(events: &EventsDef, out_path: &Path) {
         let ctor_params = variant
             .fields
             .iter()
-            .map(|f| format!("{}: {}", to_lower_camel_case(&f.name), ts_field_type(&f.ty)))
+            .map(|f| {
+                let exp = expand_ts(&f.name, &f.ty, true, None);
+                let ty = exp.ctor_params.first().map(|(_, t)| t.as_str()).unwrap_or("u32");
+                format!("{}: {ty}", to_lower_camel_case(&f.name))
+            })
             .collect::<Vec<_>>()
             .join(", ");
         writeln!(buf, "  constructor({ctor_params}) {{").unwrap();
@@ -390,6 +396,9 @@ pub fn generate_ts(events: &EventsDef, out_path: &Path) {
                     )
                     .unwrap();
                 }
+                FieldType::Bool => {
+                    writeln!(buf, "    const {field_ts} = event.{fn_name}() != 0;").unwrap();
+                }
                 _ => {
                     writeln!(buf, "    const {field_ts} = event.{fn_name}();").unwrap();
                 }
@@ -412,16 +421,6 @@ pub fn generate_ts(events: &EventsDef, out_path: &Path) {
 
     std::fs::write(out_path, &buf)
         .unwrap_or_else(|e| panic!("cannot write {}: {e}", out_path.display()));
-}
-
-fn ts_field_type(ty: &FieldType) -> &'static str {
-    match ty {
-        FieldType::U32 | FieldType::Usize | FieldType::TimerId => "u32",
-        FieldType::Bool => "bool",
-        FieldType::Str => "string",
-        FieldType::Duration => "u64",
-        _ => "u32",
-    }
 }
 
 fn to_lower_camel_case(s: &str) -> String {

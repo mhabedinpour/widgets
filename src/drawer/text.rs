@@ -1,21 +1,22 @@
+use alloc::string::String;
 use crate::drawer::{Color, Drawer, Point};
 
 /// @wasm required="text,position"
-#[derive(Clone, Copy)]
-pub struct TextData<'a> {
-    pub text: &'a str,
+#[derive(Clone)]
+pub struct TextData {
+    pub text: String,
     pub position: Point,
     /// @default Color::WHITE
     pub color: Color,
 }
 
-pub struct TextBuilder<'a> {
-    pub data: TextData<'a>,
+pub struct TextBuilder {
+    pub data: TextData,
 }
 
-impl<'a> TextBuilder<'a> {
+impl<'a> TextBuilder {
     #[inline(always)]
-    pub fn new(text: &'a str, x: u32, y: u32) -> Self {
+    pub fn new(text: String, x: u32, y: u32) -> Self {
         Self {
             data: TextData {
                 text,

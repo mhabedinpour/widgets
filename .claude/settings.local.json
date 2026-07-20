@@ -9,7 +9,12 @@
       "Bash(xargs cat:*)",
       "Skill(claude-api)",
       "Skill(claude-api:*)",
-      "Bash(chmod +x /Users/mo/Projects/widgets/scripts/add_service.py)"
+      "Bash(chmod +x /Users/mo/Projects/widgets/scripts/add_service.py)",
+      "WebFetch(domain:esp32.implrust.com)",
+      "Bash(find ~/.cargo/registry/src -path */esp-radio-0.18.0/src/wifi* -name *.rs)",
+      "Bash(find /Users/mo/.cargo/registry/src -path */embassy-net-0*/src/lib.rs)",
+      "Bash(find /Users/mo/.cargo/registry/src -path */esp-rtos-*/src* -name *.rs)",
+      "Bash(find /Users/mo/.cargo/registry/src -path */reqwless-*/src -type d)"
     ]
   }
 }

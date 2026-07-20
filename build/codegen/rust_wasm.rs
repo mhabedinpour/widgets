@@ -85,7 +85,7 @@ pub fn generate(service: &ServiceDef, out_dir: &Path) {
             for field in &binding.fields {
                 let exp = expand_wasm(&field.name, &field.ty);
                 let construct = if field.ty == FieldType::Str {
-                    format!("&*{}_buf", field.name)
+                    format!("{}_buf", field.name)
                 } else {
                     exp.construct
                 };
@@ -180,12 +180,12 @@ fn emit_str_preamble(buf: &mut String, fields: &[crate::codegen::model::FieldDef
         writeln!(buf, "                    }};").unwrap();
         writeln!(
             buf,
-            "                    let mut {n}_buf = heapless::String::<256>::new();"
+            "                    let mut {n}_buf = alloc::string::String::new();"
         )
         .unwrap();
         writeln!(
             buf,
-            "                    if {n}_buf.push_str({n}_utf8).is_err() {{ return; }}"
+            "                    {n}_buf.push_str({n}_utf8);"
         )
         .unwrap();
     }

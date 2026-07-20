@@ -147,11 +147,11 @@ impl<T: DrawTarget<Color = Rgb888>> Drawer for EmbeddedGraphicsDrawer<T> {
         .ok();
     }
 
-    fn execute_text(&mut self, data: TextData<'_>) {
+    fn execute_text(&mut self, data: TextData) {
         let character_style = MonoTextStyle::new(&FONT_6X10, color_to_rgb888(data.color));
 
         Text::new(
-            data.text,
+            &data.text,
             Point::new(data.position.x as i32, data.position.y as i32),
             character_style,
         )

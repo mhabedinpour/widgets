@@ -5,6 +5,7 @@ extern crate alloc;
 pub mod backend;
 pub mod drawer;
 pub mod http;
+pub mod time_sync;
 pub mod timer;
 pub mod widget;
 

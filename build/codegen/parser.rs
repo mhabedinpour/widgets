@@ -368,6 +368,7 @@ fn resolve_type(ty: &Type, struct_name: &str, field_name: &str) -> FieldType {
                 "Point" => FieldType::Point,
                 "Rect" => FieldType::Rect,
                 "str" => FieldType::Str,
+                "String" => FieldType::Str,
                 "Duration" => FieldType::Duration,
                 other => panic!(
                     "Unknown field type `{other}` on {struct_name}::{field_name}. \
