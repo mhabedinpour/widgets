@@ -27,4 +27,5 @@ target/
 
 widgets/node_modules
 widgets/*.wasm
-widgets/lib
+widgets/lib/*
+!widgets/lib/config.ts

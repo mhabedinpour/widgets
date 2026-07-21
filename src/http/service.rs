@@ -17,9 +17,9 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::Duration;
 use embedded_io_async::{Read, Write};
-use embedded_tls::{Aes128GcmSha256, TlsConfig, TlsConnection, TlsContext, UnsecureProvider};
+use embedded_tls::{Aes256GcmSha384, TlsConfig, TlsConnection, TlsContext, UnsecureProvider};
 use esp_hal::rng::Rng;
-
+use esp_println::println;
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -276,14 +276,14 @@ async fn execute_https_request<'b>(
         .await
         .map_err(|_| HttpError::ConnectFailed)?;
 
-    let config = TlsConfig::new().with_server_name(parsed.host);
-    let mut tls: TlsConnection<'_, _, Aes128GcmSha256> =
+    let config = TlsConfig::new().with_server_name(parsed.host).enable_rsa_signatures();
+    let mut tls: TlsConnection<'_, _, Aes256GcmSha384> =
         TlsConnection::new(socket, tls_rx, tls_tx);
 
     let rng = EspCryptoRng(Rng::new());
     tls.open(TlsContext::new(
         &config,
-        UnsecureProvider::new::<Aes128GcmSha256>(rng),
+        UnsecureProvider::new::<Aes256GcmSha384>(rng),
     ))
     .await
     .map_err(|_| HttpError::TlsHandshakeFailed)?;
@@ -354,7 +354,7 @@ async fn widget_http_task(
                     (None, None, Some(e))
                 }
             };
-
+        
         critical_section::with(|cs| {
             completed.borrow(cs).borrow_mut().push((
                 widget_id,

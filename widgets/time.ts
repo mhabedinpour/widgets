@@ -24,8 +24,8 @@ let DST_END_MONTH: i32 = 10;     // month DST ends   (default: October)
 function loadConfig(): void {
   if (configLoaded) return;
   const cfg = new Config();
-  UTC_OFFSET_STD  = parseInt(cfg.getOr("utc_offset",      "3600"));
-  UTC_OFFSET_DST  = parseInt(cfg.getOr("utc_dst_offset",  "7200"));
+  UTC_OFFSET_STD  = <i64>parseInt(cfg.getOr("utc_offset",      "3600"));
+  UTC_OFFSET_DST  = <i64>parseInt(cfg.getOr("utc_dst_offset",  "7200"));
   DST_START_MONTH = <i32>parseInt(cfg.getOr("dst_start_month", "3"));
   DST_END_MONTH   = <i32>parseInt(cfg.getOr("dst_end_month",   "10"));
   configLoaded = true;
