@@ -1,9 +1,9 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use syn::{Attribute, Fields, FnArg, Item, TraitItem, Type};
 
-use crate::codegen::model::{EventFieldDef, EventVariantDef, EventsDef};
-
-use crate::codegen::model::{BindingDef, FieldDef, FieldType, ReturnType, ServiceDef};
+use crate::codegen::model::{BindingDef, EventFieldDef, EventVariantDef, EventsDef, FieldDef, ServiceDef};
+use crate::codegen::type_map::{expand, expand_return, Expansion};
 
 /// Recursively scan `src_root` for Rust traits annotated with `@wasm` and
 /// return a `ServiceDef` for each one found.
@@ -52,7 +52,6 @@ fn try_parse_service_from_file(path: &Path) -> Option<ServiceDef> {
                 continue;
             };
 
-            // Service name comes from the trait name (lower-cased).
             let service_name = t.ident.to_string().to_lowercase();
 
             let src_dir = path
@@ -60,9 +59,8 @@ fn try_parse_service_from_file(path: &Path) -> Option<ServiceDef> {
                 .expect("trait file has no parent directory")
                 .to_path_buf();
 
-            let paths = sorted_rs_files(&src_dir);
+            let structs = collect_structs(&src_dir);
 
-            // Each trait method with @wasm becomes one binding.
             let mut bindings = Vec::new();
             for ti in &t.items {
                 if let TraitItem::Fn(method) = ti {
@@ -76,20 +74,19 @@ fn try_parse_service_from_file(path: &Path) -> Option<ServiceDef> {
                         parse_kv(&method_wasm_line, "builder_name").unwrap_or_else(|| {
                             panic!("@wasm on `{executor_method}` missing builder_name=")
                         });
-                    let return_type = infer_return_type(&method.sig.output, &executor_method);
+                    let return_expansion = infer_return_expansion(&method.sig.output, &executor_method);
                     let data_type = extract_data_param_type(&method.sig).unwrap_or_else(|| {
                         panic!("@wasm method `{executor_method}` has no data parameter")
                     });
 
-                    // Field definitions and required flags come from the struct annotation.
-                    let fields = find_struct_fields(&paths, &data_type);
+                    let fields = find_struct_fields(&structs, &data_type);
 
                     bindings.push(BindingDef {
                         executor_method,
                         builder_name,
                         data_type,
                         fields,
-                        return_type,
+                        return_expansion,
                     });
                 }
             }
@@ -104,57 +101,58 @@ fn try_parse_service_from_file(path: &Path) -> Option<ServiceDef> {
     None
 }
 
-/// Scan `paths` for a struct named `struct_name` and return its field definitions.
-/// The `required` flag on each field is derived from the struct's own `@wasm required="..."` doc.
-fn find_struct_fields(paths: &[PathBuf], struct_name: &str) -> Vec<FieldDef> {
-    for path in paths {
-        let source = std::fs::read_to_string(path)
+/// Parse every `.rs` file in `src_dir` once and index its structs by name.
+/// On duplicate names, the first occurrence in sorted file order wins.
+fn collect_structs(src_dir: &Path) -> HashMap<String, syn::ItemStruct> {
+    let mut structs = HashMap::new();
+    for path in sorted_rs_files(src_dir) {
+        let source = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
         let file = syn::parse_file(&source)
             .unwrap_or_else(|e| panic!("cannot parse {}: {e}", path.display()));
 
         for item in file.items {
             if let Item::Struct(s) = item {
-                if s.ident != struct_name {
-                    continue;
-                }
-                let Fields::Named(named) = s.fields else {
-                    continue;
-                };
-
-                // Read required fields from the struct's @wasm annotation.
-                let struct_doc = collect_doc(&s.attrs);
-                let required_raw = find_directive(&struct_doc, "@wasm")
-                    .and_then(|line| parse_kv(&line, "required"))
-                    .unwrap_or_default();
-                let required_set: Vec<&str> = required_raw
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .collect();
-
-                let mut fields = Vec::new();
-                for field in named.named {
-                    let field_name = field.ident.unwrap().to_string();
-                    let ty = resolve_type(&field.ty, struct_name, &field_name);
-                    let field_doc = collect_doc(&field.attrs);
-                    let default = find_directive(&field_doc, "@default")
-                        .map(|line| extract_after_directive(&line, "@default"));
-                    let setter_name = find_directive(&field_doc, "@setter")
-                        .map(|line| extract_after_directive(&line, "@setter"));
-                    fields.push(FieldDef {
-                        required: required_set.contains(&field_name.as_str()),
-                        name: field_name,
-                        ty,
-                        default,
-                        setter_name,
-                    });
-                }
-                return fields;
+                structs.entry(s.ident.to_string()).or_insert(s);
             }
         }
     }
-    panic!("No struct `{struct_name}` found in scanned files");
+    structs
+}
+
+/// Look up `struct_name` in the pre-parsed struct index and return its field definitions.
+fn find_struct_fields(structs: &HashMap<String, syn::ItemStruct>, struct_name: &str) -> Vec<FieldDef> {
+    let s = structs
+        .get(struct_name)
+        .unwrap_or_else(|| panic!("No struct `{struct_name}` found in scanned files"));
+    let Fields::Named(named) = &s.fields else {
+        panic!("Struct `{struct_name}` must have named fields");
+    };
+
+    let struct_doc = collect_doc(&s.attrs);
+    let required_raw = find_directive(&struct_doc, "@wasm")
+        .and_then(|line| parse_kv(&line, "required"))
+        .unwrap_or_default();
+    let required_set: Vec<&str> = required_raw
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let mut fields = Vec::new();
+    for field in &named.named {
+        let field_name = field.ident.as_ref().unwrap().to_string();
+        let type_name = type_name_from_syn(&field.ty, struct_name, &field_name);
+        let field_doc = collect_doc(&field.attrs);
+        let default = find_directive(&field_doc, "@default")
+            .map(|line| extract_after_directive(&line, "@default"));
+        let setter_name = find_directive(&field_doc, "@setter")
+            .map(|line| extract_after_directive(&line, "@setter"));
+        let required = required_set.contains(&field_name.as_str());
+        let expansion = expand(&field_name, &type_name, struct_name, required, default.as_deref());
+        fields.push(FieldDef { name: field_name, expansion, setter_name });
+    }
+    fields
 }
 
 /// Extract the name of the first non-`self` parameter type from a method signature.
@@ -181,12 +179,12 @@ fn path_type_name(ty: &Type) -> String {
     }
 }
 
-/// Map a `syn::ReturnType` to our `ReturnType` enum, returning `None` for void.
-fn infer_return_type(output: &syn::ReturnType, method_name: &str) -> Option<ReturnType> {
+/// Infer the return expansion from a method signature. Returns `None` for void.
+fn infer_return_expansion(output: &syn::ReturnType, method_name: &str) -> Option<Expansion> {
     match output {
         syn::ReturnType::Default => None,
         syn::ReturnType::Type(_, ty) => match ty.as_ref() {
-            Type::Tuple(t) if t.elems.is_empty() => None, // explicit `-> ()`
+            Type::Tuple(t) if t.elems.is_empty() => None,
             Type::Path(p) => {
                 let seg = p
                     .path
@@ -195,19 +193,9 @@ fn infer_return_type(output: &syn::ReturnType, method_name: &str) -> Option<Retu
                     .expect("return type path has no segments")
                     .ident
                     .to_string();
-                match seg.as_str() {
-                    "u32" | "u8" | "u16" | "u64" | "usize" => Some(ReturnType::U32),
-                    "bool" => Some(ReturnType::Bool),
-                    "i32" | "i8" | "i16" | "i64" => Some(ReturnType::I32),
-                    other => panic!(
-                        "Unsupported return type `{other}` on trait method `{method_name}`. \
-                         Supported: u32/usize/u8/u16/u64, bool, i32/i8/i16/i64."
-                    ),
-                }
+                Some(expand_return(&seg, method_name))
             }
-            other => {
-                panic!("Unsupported return type shape on trait method `{method_name}`: {other:?}")
-            }
+            other => panic!("Unsupported return type shape on `{method_name}`: {other:?}"),
         },
     }
 }
@@ -222,13 +210,12 @@ fn sorted_rs_files(src_dir: &Path) -> Vec<PathBuf> {
         .filter(|p| p.extension().map_or(false, |ext| ext == "rs"))
         .collect();
 
-    paths.sort(); // deterministic ordering
+    paths.sort();
     paths
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-/// Collect all `#[doc = "..."]` attribute strings into one joined string.
 fn collect_doc(attrs: &[Attribute]) -> String {
     attrs
         .iter()
@@ -251,14 +238,12 @@ fn collect_doc(attrs: &[Attribute]) -> String {
         .join("\n")
 }
 
-/// Find the first line in `doc` that contains `directive` and return that line.
 fn find_directive(doc: &str, directive: &str) -> Option<String> {
     doc.lines()
         .find(|line| line.contains(directive))
         .map(|s| s.to_string())
 }
 
-/// Parse `key="value"` from a directive line.
 fn parse_kv(line: &str, key: &str) -> Option<String> {
     let needle = format!("{key}=\"");
     let start = line.find(&needle)? + needle.len();
@@ -267,12 +252,30 @@ fn parse_kv(line: &str, key: &str) -> Option<String> {
     Some(rest[..end].to_string())
 }
 
-/// Extract the text immediately after a directive keyword, stopping at the next `@` or end of line.
 fn extract_after_directive(line: &str, directive: &str) -> String {
     let start = line.find(directive).unwrap() + directive.len();
     let rest = line[start..].trim();
     let end = rest.find('@').unwrap_or(rest.len());
     rest[..end].trim().to_string()
+}
+
+/// Extract the Rust type name (e.g. "u32", "Color", "Vec<String>") from a
+/// `syn::Type`, including a single generic argument when present.
+fn type_name_from_syn(ty: &Type, context: &str, field: &str) -> String {
+    match ty {
+        Type::Reference(r) => type_name_from_syn(&r.elem, context, field),
+        Type::Path(p) => {
+            let seg = p.path.segments.last().expect("type path has no segments");
+            let ident = seg.ident.to_string();
+            if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
+                if let Some(syn::GenericArgument::Type(t)) = args.args.first() {
+                    return format!("{ident}<{}>", type_name_from_syn(t, context, field));
+                }
+            }
+            ident
+        }
+        other => panic!("Unsupported type shape on {context}::{field}: {other:?}"),
+    }
 }
 
 /// Parse `src/widget/mod.rs` and extract all variants of the `WidgetEvent` enum.
@@ -295,16 +298,15 @@ pub fn scan_events(widget_mod_path: &Path) -> EventsDef {
                     panic!("WidgetEvent::{variant_name} must use named fields");
                 };
 
+                let context = format!("WidgetEvent::{variant_name}");
                 let fields = named
                     .named
                     .iter()
                     .map(|f| {
                         let field_name = f.ident.as_ref().unwrap().to_string();
-                        let ty = resolve_event_field_type(&f.ty, &variant_name, &field_name);
-                        EventFieldDef {
-                            name: field_name,
-                            ty,
-                        }
+                        let type_name = type_name_from_syn(&f.ty, &context, &field_name);
+                        let expansion = expand(&field_name, &type_name, &context, true, None);
+                        EventFieldDef { name: field_name, expansion }
                     })
                     .collect();
 
@@ -323,59 +325,4 @@ pub fn scan_events(widget_mod_path: &Path) -> EventsDef {
         "WidgetEvent enum not found in {}",
         widget_mod_path.display()
     );
-}
-
-fn resolve_event_field_type(ty: &Type, variant: &str, field: &str) -> FieldType {
-    match ty {
-        Type::Reference(r) => resolve_event_field_type(&r.elem, variant, field),
-        Type::Path(p) => {
-            let seg = p.path.segments.last().unwrap().ident.to_string();
-            match seg.as_str() {
-                "u32" | "u8" | "u16" | "u64" => FieldType::U32,
-                "i32" | "i8" | "i16" | "i64" => FieldType::U32,
-                "TimerId" => FieldType::TimerId,
-                "usize" => FieldType::Usize,
-                "bool" => FieldType::Bool,
-                "String" | "str" => FieldType::Str,
-                other => panic!(
-                    "Unknown field type `{other}` in WidgetEvent::{variant}::{field}. \
-                     Add it to parser.rs resolve_event_field_type."
-                ),
-            }
-        }
-        other => panic!("Unsupported type shape in WidgetEvent::{variant}::{field}: {other:?}"),
-    }
-}
-
-/// Map a `syn::Type` to our `FieldType` enum.
-fn resolve_type(ty: &Type, struct_name: &str, field_name: &str) -> FieldType {
-    match ty {
-        Type::Reference(r) => resolve_type(&r.elem, struct_name, field_name),
-        Type::Path(p) => {
-            let seg = p
-                .path
-                .segments
-                .last()
-                .expect("type path has no segments")
-                .ident
-                .to_string();
-            match seg.as_str() {
-                "u32" | "u8" | "u16" | "u64" => FieldType::U32,
-                "TimerId" => FieldType::TimerId,
-                "usize" => FieldType::Usize,
-                "bool" => FieldType::Bool,
-                "Color" => FieldType::Color,
-                "Point" => FieldType::Point,
-                "Rect" => FieldType::Rect,
-                "str" => FieldType::Str,
-                "String" => FieldType::Str,
-                "Duration" => FieldType::Duration,
-                other => panic!(
-                    "Unknown field type `{other}` on {struct_name}::{field_name}. \
-                     Add it to type_map.rs."
-                ),
-            }
-        }
-        other => panic!("Unsupported type shape on {struct_name}::{field_name}: {other:?}"),
-    }
 }
