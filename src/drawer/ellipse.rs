@@ -1,9 +1,9 @@
-use crate::drawer::{Color, Drawer, Point, Rect, Size, StrokeAlignment};
+use crate::drawer::{Color, Drawer, Rect, StrokeAlignment};
 
-/// @wasm required="rect"
+/// @wasm required="bounding_box"
 #[derive(Clone, Copy)]
-pub struct RectData {
-    pub rect: Rect,
+pub struct EllipseData {
+    pub bounding_box: Rect,
     /// @default Color::WHITE
     pub fill_color: Color,
     /// @default true
@@ -14,32 +14,24 @@ pub struct RectData {
     pub stroke_width: u32,
     /// @default StrokeAlignment::Center
     pub stroke_alignment: StrokeAlignment,
-    /// @default 0 @setter rounded
-    pub corner_radius: u32,
 }
 
-pub struct RectBuilder {
-    pub data: RectData,
+pub struct EllipseBuilder {
+    pub data: EllipseData,
 }
 
-impl RectBuilder {
+impl EllipseBuilder {
     #[inline(always)]
-    pub fn new(x: u32, y: u32, w: u32, h: u32) -> Self {
+    pub fn new(x: u32, y: u32, width: u32, height: u32) -> Self {
+        use crate::drawer::{Point, Size};
         Self {
-            data: RectData {
-                rect: Rect {
-                    origin: Point { x, y },
-                    size: Size {
-                        width: w,
-                        height: h,
-                    },
-                },
+            data: EllipseData {
+                bounding_box: Rect::new(Point { x, y }, Size { width, height }),
                 fill_color: Color::WHITE,
                 fill: true,
                 stroke_color: Color::WHITE,
                 stroke_width: 0,
                 stroke_alignment: StrokeAlignment::Center,
-                corner_radius: 0,
             },
         }
     }
@@ -96,15 +88,8 @@ impl RectBuilder {
         self
     }
 
-    /// Sets the corner radius for rounded rectangles.
-    #[inline(always)]
-    pub fn rounded(mut self, radius: u32) -> Self {
-        self.data.corner_radius = radius;
-        self
-    }
-
     #[inline(always)]
     pub fn draw(self, drawer: &mut dyn Drawer) {
-        drawer.execute_rect(self.data);
+        drawer.execute_ellipse(self.data);
     }
 }

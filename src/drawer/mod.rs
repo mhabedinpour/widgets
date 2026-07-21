@@ -1,16 +1,22 @@
+pub mod arc;
 pub mod circle;
+pub mod ellipse;
 pub mod embedded_graphics;
 pub mod line;
 pub mod rect;
+pub mod sector;
 pub mod text;
 pub mod triangle;
 pub mod types;
 
 use alloc::boxed::Box;
+pub use arc::{ArcBuilder, ArcData};
 pub use circle::{CircleBuilder, CircleData};
+pub use ellipse::{EllipseBuilder, EllipseData};
 pub use embedded_graphics::*;
 pub use line::{LineBuilder, LineData};
 pub use rect::{RectBuilder, RectData};
+pub use sector::{SectorBuilder, SectorData};
 pub use text::{TextBuilder, TextData};
 pub use triangle::{TriangleBuilder, TriangleData};
 pub use types::*;
@@ -22,8 +28,14 @@ pub trait Drawer {
     fn execute_rect(&mut self, data: RectData);
     /// @wasm builder_name="circle"
     fn execute_circle(&mut self, data: CircleData);
+    /// @wasm builder_name="ellipse"
+    fn execute_ellipse(&mut self, data: EllipseData);
     /// @wasm builder_name="triangle"
     fn execute_triangle(&mut self, data: TriangleData);
+    /// @wasm builder_name="arc"
+    fn execute_arc(&mut self, data: ArcData);
+    /// @wasm builder_name="sector"
+    fn execute_sector(&mut self, data: SectorData);
     /// @wasm builder_name="line"
     fn execute_line(&mut self, data: LineData);
     /// @wasm builder_name="text"

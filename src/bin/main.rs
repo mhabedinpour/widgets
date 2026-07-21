@@ -29,15 +29,14 @@ use static_cell::StaticCell;
 use widgets::backend::lcd::{LCDCAM64x64, LCDCAM64x64Flusher};
 use widgets::compiled_widgets;
 use widgets::drawer::{Point, Rect, Size};
-use widgets::http::http::HttpService;
+use widgets::http::HttpService;
 use widgets::time_sync::start as start_time_sync;
-use widgets::timer::timer::TimerService;
+use widgets::time::timer::TimeService;
 use widgets::widget::executor::wasm::WasmExecutor;
 use widgets::widget::manager::WidgetManager;
 use widgets::widget::{Widget, WidgetId};
 
 use embassy_net::{Config as NetConfig, DhcpConfig, Runner, StackResources};
-use esp_println::println;
 use esp_radio::wifi::{Config as WifiConfig, WifiController, sta::StationConfig};
 
 const WIFI_SSID: &str = option_env!("WIFI_SSID").unwrap_or("");
@@ -180,7 +179,7 @@ async fn main(spawner: Spawner) -> ! {
     let backend = LCDCAM64x64::new(pins, peripherals.LCD_CAM, peripherals.DMA_CH0, freq);
     let mut manager = WidgetManager::new(
         backend.1,
-        TimerService::new(),
+        TimeService::new(),
         HttpService::new(spawner, stack),
     );
 
@@ -189,16 +188,14 @@ async fn main(spawner: Spawner) -> ! {
         sw_interrupt.software_interrupt1,
         backend.0,
     );
-
-    HttpService::new()
-
-    // manager.add_widget(
-    //     WidgetId::new(1),
-    //     Widget {
-    //         placement: Rect::new(Point::new(0, 0), Size::new(64, 64)),
-    //         executor: Box::new(WasmExecutor::new(compiled_widgets::SAMPLE).unwrap()),
-    //     },
-    // );
+    
+    manager.add_widget(
+        WidgetId::new(1),
+        Widget {
+            placement: Rect::new(Point::new(0, 0), Size::new(64, 64)),
+            executor: Box::new(WasmExecutor::new(compiled_widgets::SAMPLE).unwrap()),
+        },
+    );
 
     manager.render();
 

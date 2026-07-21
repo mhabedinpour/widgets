@@ -2,80 +2,78 @@ use crate::drawer::{Color, Drawer, Point, StrokeAlignment};
 
 /// @wasm required="center,radius"
 #[derive(Clone, Copy)]
-pub struct CircleData {
+pub struct ArcData {
     pub center: Point,
     pub radius: u32,
-    /// @default Color::WHITE
-    pub fill_color: Color,
-    /// @default true
-    pub fill: bool,
+    /// @default 0
+    pub angle_start: i32,
+    /// @default 360
+    pub angle_sweep: i32,
     /// @default Color::WHITE
     pub stroke_color: Color,
-    /// @default 0
+    /// @default 1
     pub stroke_width: u32,
     /// @default StrokeAlignment::Center
     pub stroke_alignment: StrokeAlignment,
 }
 
-pub struct CircleBuilder {
-    pub data: CircleData,
+pub struct ArcBuilder {
+    pub data: ArcData,
 }
 
-impl CircleBuilder {
+impl ArcBuilder {
     #[inline(always)]
     pub fn new(cx: u32, cy: u32, r: u32) -> Self {
         Self {
-            data: CircleData {
+            data: ArcData {
                 center: Point { x: cx, y: cy },
                 radius: r,
-                fill_color: Color::WHITE,
-                fill: true,
+                angle_start: 0,
+                angle_sweep: 360,
                 stroke_color: Color::WHITE,
-                stroke_width: 0,
+                stroke_width: 1,
                 stroke_alignment: StrokeAlignment::Center,
             },
         }
     }
 
-    /// Sets the fill color. Enables fill if it was disabled.
+    /// Sets start angle in degrees.
+    #[inline(always)]
+    pub fn angle_start(mut self, degrees: i32) -> Self {
+        self.data.angle_start = degrees;
+        self
+    }
+
+    /// Sets sweep angle in degrees.
+    #[inline(always)]
+    pub fn angle_sweep(mut self, degrees: i32) -> Self {
+        self.data.angle_sweep = degrees;
+        self
+    }
+
+    /// Sets both start and sweep angles in degrees.
+    #[inline(always)]
+    pub fn angles(mut self, start: i32, sweep: i32) -> Self {
+        self.data.angle_start = start;
+        self.data.angle_sweep = sweep;
+        self
+    }
+
+    /// Sets the stroke color.
     #[inline(always)]
     pub fn color(mut self, color: Color) -> Self {
-        self.data.fill_color = color;
-        self.data.fill = true;
+        self.data.stroke_color = color;
         self
     }
 
-    /// Sets the fill color explicitly.
-    #[inline(always)]
-    pub fn fill_color(mut self, color: Color) -> Self {
-        self.data.fill_color = color;
-        self.data.fill = true;
-        self
-    }
-
-    /// Disables fill, leaving only stroke visible.
-    #[inline(always)]
-    pub fn no_fill(mut self) -> Self {
-        self.data.fill = false;
-        self
-    }
-
-    /// Sets the stroke width. Backward-compat: also disables fill.
-    #[inline(always)]
-    pub fn stroke(mut self, width: u32) -> Self {
-        self.data.fill = false;
-        self.data.stroke_width = width;
-        self
-    }
-
-    /// Sets the stroke color independently of fill.
+    /// Sets the stroke color.
     #[inline(always)]
     pub fn stroke_color(mut self, color: Color) -> Self {
         self.data.stroke_color = color;
         self
     }
 
-    /// Sets stroke width without affecting fill.
+    /// Sets the stroke width.
     #[inline(always)]
     pub fn stroke_width(mut self, width: u32) -> Self {
         self.data.stroke_width = width;
@@ -91,6 +89,6 @@ impl CircleBuilder {
 
     #[inline(always)]
     pub fn draw(self, drawer: &mut dyn Drawer) {
-        drawer.execute_circle(self.data);
+        drawer.execute_arc(self.data);
     }
 }

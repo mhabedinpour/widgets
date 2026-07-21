@@ -253,6 +253,46 @@ pub fn expand(
             abi_to_ts: expr(name.to_string()),
         },
 
+        "StrokeAlignment" => Expansion {
+            ta_type: "StrokeAlignment".to_string(),
+            ta_default: Some("StrokeAlignment.Center".to_string()),
+            abi: vec![abi(name.to_string(), "u32")],
+            rust_to_abi: expr("%v% as u32".to_string()),
+            abi_to_rust: expr(format!("crate::drawer::types::StrokeAlignment::from_int({name})")),
+            ts_to_abi: expr("%v% as u32".to_string()),
+            abi_to_ts: expr(format!("{name} as StrokeAlignment")),
+        },
+
+        "Font" => Expansion {
+            ta_type: "Font".to_string(),
+            ta_default: Some("Font.Font6x10".to_string()),
+            abi: vec![abi(name.to_string(), "u32")],
+            rust_to_abi: expr("%v% as u32".to_string()),
+            abi_to_rust: expr(format!("crate::drawer::types::Font::from_int({name})")),
+            ts_to_abi: expr("%v% as u32".to_string()),
+            abi_to_ts: expr(format!("{name} as Font")),
+        },
+
+        "TextAlignment" => Expansion {
+            ta_type: "TextAlignment".to_string(),
+            ta_default: Some("TextAlignment.Left".to_string()),
+            abi: vec![abi(name.to_string(), "u32")],
+            rust_to_abi: expr("%v% as u32".to_string()),
+            abi_to_rust: expr(format!("crate::drawer::types::TextAlignment::from_int({name})")),
+            ts_to_abi: expr("%v% as u32".to_string()),
+            abi_to_ts: expr(format!("{name} as TextAlignment")),
+        },
+
+        "Baseline" => Expansion {
+            ta_type: "Baseline".to_string(),
+            ta_default: Some("Baseline.Alphabetic".to_string()),
+            abi: vec![abi(name.to_string(), "u32")],
+            rust_to_abi: expr("%v% as u32".to_string()),
+            abi_to_rust: expr(format!("crate::drawer::types::Baseline::from_int({name})")),
+            ts_to_abi: expr("%v% as u32".to_string()),
+            abi_to_ts: expr(format!("{name} as Baseline")),
+        },
+
         t if t.starts_with("Vec<") && t.ends_with('>') => {
             array_expansion(name, &t[4..t.len() - 1], context)
         }
@@ -567,4 +607,8 @@ fn rust_default_to_ts(default: &str) -> String {
         .replace("Color::WHITE", "Color.WHITE")
         .replace("Color::BLACK", "Color.BLACK")
         .replace("Color::RGB", "new Color")
+        .replace("StrokeAlignment::", "StrokeAlignment.")
+        .replace("Font::", "Font.")
+        .replace("TextAlignment::", "TextAlignment.")
+        .replace("Baseline::", "Baseline.")
 }

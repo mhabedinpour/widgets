@@ -1,9 +1,14 @@
-use crate::drawer::{Color, Drawer, Point, Rect, Size, StrokeAlignment};
+use crate::drawer::{Color, Drawer, Point, StrokeAlignment};
 
-/// @wasm required="rect"
+/// @wasm required="center,radius"
 #[derive(Clone, Copy)]
-pub struct RectData {
-    pub rect: Rect,
+pub struct SectorData {
+    pub center: Point,
+    pub radius: u32,
+    /// @default 0
+    pub angle_start: i32,
+    /// @default 360
+    pub angle_sweep: i32,
     /// @default Color::WHITE
     pub fill_color: Color,
     /// @default true
@@ -14,34 +19,50 @@ pub struct RectData {
     pub stroke_width: u32,
     /// @default StrokeAlignment::Center
     pub stroke_alignment: StrokeAlignment,
-    /// @default 0 @setter rounded
-    pub corner_radius: u32,
 }
 
-pub struct RectBuilder {
-    pub data: RectData,
+pub struct SectorBuilder {
+    pub data: SectorData,
 }
 
-impl RectBuilder {
+impl SectorBuilder {
     #[inline(always)]
-    pub fn new(x: u32, y: u32, w: u32, h: u32) -> Self {
+    pub fn new(cx: u32, cy: u32, r: u32) -> Self {
         Self {
-            data: RectData {
-                rect: Rect {
-                    origin: Point { x, y },
-                    size: Size {
-                        width: w,
-                        height: h,
-                    },
-                },
+            data: SectorData {
+                center: Point { x: cx, y: cy },
+                radius: r,
+                angle_start: 0,
+                angle_sweep: 360,
                 fill_color: Color::WHITE,
                 fill: true,
                 stroke_color: Color::WHITE,
                 stroke_width: 0,
                 stroke_alignment: StrokeAlignment::Center,
-                corner_radius: 0,
             },
         }
+    }
+
+    /// Sets start angle in degrees.
+    #[inline(always)]
+    pub fn angle_start(mut self, degrees: i32) -> Self {
+        self.data.angle_start = degrees;
+        self
+    }
+
+    /// Sets sweep angle in degrees.
+    #[inline(always)]
+    pub fn angle_sweep(mut self, degrees: i32) -> Self {
+        self.data.angle_sweep = degrees;
+        self
+    }
+
+    /// Sets both start and sweep angles in degrees.
+    #[inline(always)]
+    pub fn angles(mut self, start: i32, sweep: i32) -> Self {
+        self.data.angle_start = start;
+        self.data.angle_sweep = sweep;
+        self
     }
 
     /// Sets the fill color. Enables fill if it was disabled.
@@ -96,15 +117,8 @@ impl RectBuilder {
         self
     }
 
-    /// Sets the corner radius for rounded rectangles.
-    #[inline(always)]
-    pub fn rounded(mut self, radius: u32) -> Self {
-        self.data.corner_radius = radius;
-        self
-    }
-
     #[inline(always)]
     pub fn draw(self, drawer: &mut dyn Drawer) {
-        drawer.execute_rect(self.data);
+        drawer.execute_sector(self.data);
     }
 }
