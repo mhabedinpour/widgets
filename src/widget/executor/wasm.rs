@@ -57,6 +57,10 @@ struct ConsoleModule;
 
 include!(concat!(env!("OUT_DIR"), "/console_wasm_bindings.rs"));
 
+struct NetworkModule;
+
+include!(concat!(env!("OUT_DIR"), "/network_wasm_bindings.rs"));
+
 struct EnvModule;
 
 impl HostModule for EnvModule {
@@ -119,6 +123,7 @@ impl WasmExecutor {
         EventModule.register(&mut linker, &mut store)?;
         HttpModule.register(&mut linker, &mut store)?;
         ConsoleModule.register(&mut linker, &mut store)?;
+        NetworkModule.register(&mut linker, &mut store)?;
 
         let instance = linker.instantiate_and_start(&mut store, &module)?;
         let render_func = instance.get_typed_func::<(), ()>(&store, "render")?;

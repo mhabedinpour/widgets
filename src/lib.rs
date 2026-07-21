@@ -7,6 +7,7 @@ pub mod backend;
 pub mod console;
 pub mod drawer;
 pub mod http;
+pub mod network;
 pub mod time_sync;
 pub mod time;
 pub mod widget;

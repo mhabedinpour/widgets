@@ -3,6 +3,7 @@ pub mod wasm;
 use crate::console::Console;
 use crate::drawer::Drawer;
 use crate::http::Http;
+use crate::network::Network;
 use crate::time::Time;
 use crate::widget::WidgetEvent;
 use alloc::boxed::Box;
@@ -13,6 +14,7 @@ pub struct Context {
     pub time: Box<dyn Time>,
     pub http: Box<dyn Http>,
     pub console: Box<dyn Console>,
+    pub network: Box<dyn Network>,
 }
 
 pub trait Executor {
