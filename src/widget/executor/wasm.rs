@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 use wasmi::{
     Caller, Config, Engine, Linker, Module, Store, StoreLimits, StoreLimitsBuilder, TypedFunc,
 };
+use crate::{use_psram_heap, use_sram_heap};
 
 const MAX_WASM_MEMORY_BYTES: usize = 100 * 1024;
 
@@ -40,9 +41,9 @@ struct DrawerModule;
 
 include!(concat!(env!("OUT_DIR"), "/drawer_wasm_bindings.rs"));
 
-struct TimerModule;
+struct TimeModule;
 
-include!(concat!(env!("OUT_DIR"), "/timer_wasm_bindings.rs"));
+include!(concat!(env!("OUT_DIR"), "/time_wasm_bindings.rs"));
 
 struct EventModule;
 
@@ -92,6 +93,8 @@ impl WasmExecutor {
     }
 
     fn with_modules(wasm_binary: &[u8]) -> Result<Self, wasmi::Error> {
+        use_psram_heap();
+
         let mut config = Config::default();
         config.consume_fuel(false);
         config.set_min_stack_height(512);
@@ -107,13 +110,15 @@ impl WasmExecutor {
         store.limiter(|ctx| &mut ctx.limits);
 
         DrawerModule.register(&mut linker, &mut store)?;
-        TimerModule.register(&mut linker, &mut store)?;
+        TimeModule.register(&mut linker, &mut store)?;
         EnvModule.register(&mut linker, &mut store)?;
         EventModule.register(&mut linker, &mut store)?;
         HttpModule.register(&mut linker, &mut store)?;
 
         let instance = linker.instantiate_and_start(&mut store, &module)?;
         let render_func = instance.get_typed_func::<(), ()>(&store, "render")?;
+
+        use_sram_heap();
 
         Ok(Self { render_func, store })
     }

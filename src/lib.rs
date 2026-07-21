@@ -2,12 +2,15 @@
 #![feature(allocator_api)]
 extern crate alloc;
 
+pub mod allocator;
 pub mod backend;
 pub mod drawer;
 pub mod http;
 pub mod time_sync;
-pub mod timer;
+pub mod time;
 pub mod widget;
+
+pub use allocator::{set_psram_alloc, use_psram_heap, use_sram_heap};
 
 pub mod compiled_widgets {
     include!(concat!(env!("OUT_DIR"), "/widgets/mod.rs"));

@@ -1,19 +1,19 @@
 use crate::drawer::GlobalDrawer;
 use crate::http::GlobalHttpClient;
-use crate::timer::GlobalTimer;
+use crate::time::GlobalTime;
 use crate::widget::executor::Context;
 use crate::widget::{Widget, WidgetEvent, WidgetId};
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-pub struct WidgetManager<D: GlobalDrawer, T: GlobalTimer, H: GlobalHttpClient> {
+pub struct WidgetManager<D: GlobalDrawer, T: GlobalTime, H: GlobalHttpClient> {
     widgets: BTreeMap<WidgetId, Widget>,
     drawer: D,
     timer: T,
     http: H,
 }
 
-impl<D: GlobalDrawer, T: GlobalTimer, H: GlobalHttpClient> WidgetManager<D, T, H> {
+impl<D: GlobalDrawer, T: GlobalTime, H: GlobalHttpClient> WidgetManager<D, T, H> {
     pub fn new(drawer: D, timer: T, http: H) -> Self {
         Self {
             widgets: BTreeMap::new(),
@@ -26,7 +26,7 @@ impl<D: GlobalDrawer, T: GlobalTimer, H: GlobalHttpClient> WidgetManager<D, T, H
     pub fn add_widget(&mut self, id: WidgetId, mut widget: Widget) {
         widget.executor.set_ctx(Context {
             drawer: self.drawer.scoped(widget.placement),
-            timer: self.timer.scoped(id),
+            time: self.timer.scoped(id),
             http: self.http.scoped(id),
         });
 
@@ -83,7 +83,7 @@ impl<D: GlobalDrawer, T: GlobalTimer, H: GlobalHttpClient> WidgetManager<D, T, H
                 .or_default()
                 .push(WidgetEvent::HttpResponse {
                     request_id: response.request_id,
-                    headers: response.headers.unwrap_or("".parse().unwrap()),
+                    headers: response.headers.unwrap_or(Vec::new()),
                     body: response.body.unwrap_or("".parse().unwrap()),
                     success,
                 });
