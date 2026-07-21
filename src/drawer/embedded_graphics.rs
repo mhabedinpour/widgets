@@ -427,7 +427,7 @@ impl<T: DrawTarget<Color = Rgb888>> EmbeddedGraphicsDrawer<T> {
         }
 
         match data.font {
-            Font::U8g2Font3x3 => { render_u8g2!(fonts::u8g2_font_3x3basic_tr); }
+            Font::U8g2Font3x3 => { render_u8g2!(fonts::u8g2_font_tiny_simon_tr); }
             Font::U8g2Font3x5 => { render_u8g2!(fonts::u8g2_font_3x5im_mr); }
             Font::U8g2Font4x6 => { render_u8g2!(fonts::u8g2_font_4x6_mf); }
             Font::U8g2Font5x7 => { render_u8g2!(fonts::u8g2_font_5x7_mf); }

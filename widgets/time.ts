@@ -5,7 +5,8 @@ import { Drawer } from "./lib/drawer";
 import { Time } from "./lib/time";
 import { Config } from "./lib/config";
 import { pollEvent, EVENT_TIMER_INTERRUPT, TimerInterruptEvent } from "./lib/events";
-import { Color, Point, Duration, Font, TextAlignment, Baseline } from "./lib/types";
+import { Point, Duration, Font, TextAlignment, Baseline } from "./lib/types";
+import { Palette } from "./lib/palette";
 
 const drawer = new Drawer();
 const time = new Time();
@@ -103,10 +104,11 @@ function formatDate(ts: i64): string {
   return DOW_NAMES[d.getUTCDay()] + " " + pad2(d.getUTCDate()) + "/" + pad2(d.getUTCMonth() + 1);
 }
 
+// HH MM with a blank middle cell — the colon is overlaid separately
+// so it can pulse bright/dim instead of vanishing.
 function formatTime(ts: i64): string {
   const d = getLocalDate(ts);
-  const sep = colonVisible ? ":" : " ";
-  return pad2(d.getUTCHours()) + sep + pad2(d.getUTCMinutes());
+  return pad2(d.getUTCHours()) + " " + pad2(d.getUTCMinutes());
 }
 
 function formatSeconds(ts: i64): string {
@@ -135,17 +137,22 @@ export function render(): void {
   drawer.clear().execute();
 
   // Date — "TUE 21/07", amber, centred
-  drawer.text(formatDate(ts), new Point(32, 2))
-    .color(new Color(255, 170, 0))
+  drawer.text(formatDate(ts), new Point(32, 1))
+    .color(Palette.AMBER)
     .font(Font.Font5x7).alignment(TextAlignment.Center).baseline(Baseline.Top).execute();
 
-  // Big HH:MM clock — cyan, bold, centred, blinking colon
-  drawer.text(formatTime(ts), new Point(32, 12))
-    .color(new Color(0, 220, 255))
-    .font(Font.Font9x15Bold).alignment(TextAlignment.Center).baseline(Baseline.Top).execute();
+  // Big HH:MM clock — cyan, bold, centred
+  drawer.text(formatTime(ts), new Point(32, 10))
+    .color(Palette.CYAN)
+    .font(Font.Font9x18Bold).alignment(TextAlignment.Center).baseline(Baseline.Top).execute();
 
-  // Seconds — small, dim cyan, bottom-right of the clock
-  drawer.text(formatSeconds(ts), new Point(63, 21))
-    .color(new Color(0, 140, 170))
+  // Colon overlaid on the middle cell — pulses bright/dim once per second
+  drawer.text(":", new Point(32, 10))
+    .color(colonVisible ? Palette.CYAN : Palette.CYAN_DIM)
+    .font(Font.Font9x18Bold).alignment(TextAlignment.Center).baseline(Baseline.Top).execute();
+
+  // Seconds — small, dim cyan, bottom-aligned with the clock
+  drawer.text(formatSeconds(ts), new Point(63, 22))
+    .color(Palette.CYAN_DIM)
     .font(Font.Font4x6).alignment(TextAlignment.Right).baseline(Baseline.Top).execute();
 }

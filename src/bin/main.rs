@@ -223,7 +223,7 @@ async fn main(spawner: Spawner) -> ! {
     manager.add_widget(
         WidgetId::new(2),
         Widget {
-            placement: Rect::new(Point::new(0, 30), Size::new(64, 23)),
+            placement: Rect::new(Point::new(0, 28), Size::new(64, 23)),
             executor: Box::new(WasmExecutor::new(compiled_widgets::WEATHER).unwrap()),
         },
         weather_config(),
@@ -232,7 +232,7 @@ async fn main(spawner: Spawner) -> ! {
     manager.add_widget(
         WidgetId::new(3),
         Widget {
-            placement: Rect::new(Point::new(0, 53), Size::new(64, 11)),
+            placement: Rect::new(Point::new(0, 51), Size::new(64, 13)),
             executor: Box::new(WasmExecutor::new(compiled_widgets::NETWORK).unwrap()),
         },
         WidgetConfig::new(),

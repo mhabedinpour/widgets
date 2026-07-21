@@ -9,6 +9,7 @@ import { Console } from "./lib/console";
 import { Config } from "./lib/config";
 import { pollEvent, EVENT_HTTP_RESPONSE, HttpResponseEvent, EVENT_TIMER_INTERRUPT, TimerInterruptEvent } from "./lib/events";
 import { Color, Point, Rect, Duration, Font, Baseline } from "./lib/types";
+import { Palette } from "./lib/palette";
 
 const drawer = new Drawer();
 const http = new Http();
@@ -121,7 +122,7 @@ function drawCloud(cx: u32, cy: u32, col: Color): void {
 
 // Sun: r=3 core + 8 rays that slowly rotate around it.
 function drawSun(cx: u32, cy: u32): void {
-  const yel = new Color(255, 200, 20);
+  const yel = Palette.SUN;
   drawer.circle(new Point(cx, cy), 3).fill_color(yel).fill(true).execute();
   const spin: f64 = <f64>(animFrame % 6) * 7.5; // 45° cycle in 6 frames
   for (let i = 0; i < 8; i++) {
@@ -138,7 +139,7 @@ function drawSun(cx: u32, cy: u32): void {
 
 // Falling rain streaks — each column cycles down at its own phase.
 function drawRain(cx: u32, cy: u32): void {
-  const blu = new Color(60, 150, 255);
+  const blu = Palette.RAIN;
   for (let i = 0; i < 3; i++) {
     const dx: u32 = cx - 3 + <u32>i * 3;
     const dy: u32 = (animFrame + <u32>i) % 3;
@@ -147,21 +148,32 @@ function drawRain(cx: u32, cy: u32): void {
   }
 }
 
-// Falling pixel snowflakes with a slight sideways wobble.
+// Falling plus-shaped snowflakes with a slight sideways wobble.
 function drawSnow(cx: u32, cy: u32): void {
-  const wht = new Color(220, 240, 255);
+  const wht = Palette.SNOW;
   for (let i = 0; i < 3; i++) {
     const fx: u32 = cx - 4 + <u32>i * 4 + ((animFrame + <u32>i) % 2);
     const fy: u32 = cy + ((animFrame + <u32>i * 2) % 4);
-    drawer.line(new Point(fx, fy), new Point(fx, fy)).color(wht).execute();
+    drawer.line(new Point(fx - 1, fy), new Point(fx + 1, fy)).color(wht).execute();
+    drawer.line(new Point(fx, fy - 1), new Point(fx, fy + 1)).color(wht).execute();
+  }
+}
+
+// Light drizzle: sparse single-pixel droplets (vs. rain's thick streaks).
+function drawDrizzle(cx: u32, cy: u32): void {
+  const blu = Palette.RAIN;
+  for (let i = 0; i < 3; i++) {
+    const dx: u32 = cx - 3 + <u32>i * 3;
+    const dy: u32 = (animFrame + <u32>i * 2) % 4;
+    drawer.line(new Point(dx, cy + dy), new Point(dx, cy + dy)).color(blu).execute();
   }
 }
 
 // Crescent moon: full disc + offset background-colored disc bite,
 // with twinkling stars around it.
 function drawMoon(cx: u32, cy: u32): void {
-  const moon = new Color(230, 230, 180);
-  const star = new Color(255, 255, 220);
+  const moon = Palette.MOON;
+  const star = Palette.STAR;
 
   drawer.circle(new Point(cx, cy), 4).fill_color(moon).fill(true).execute();
   // Bite: background-colored circle offset upper-right → crescent
@@ -186,9 +198,9 @@ function drawBolt(cx: u32, cy: u32, col: Color): void {
 
 function drawWeatherIcon(code: i32, x: u32, y: u32): void {
   const cx: u32 = x + 7;
-  const gray     = new Color(190, 195, 210);
-  const darkGray = new Color(105, 105, 130);
-  const fogGray  = new Color(150, 160, 175);
+  const gray     = Palette.CLOUD;
+  const darkGray = Palette.CLOUD_DARK;
+  const fogGray  = Palette.FOG;
 
   if (code == 0) {
     // Clear: rotating-ray sun by day, crescent moon by night
@@ -198,9 +210,9 @@ function drawWeatherIcon(code: i32, x: u32, y: u32): void {
   } else if (code <= 2) {
     // Partly cloudy: sun/moon peeking top-right, cloud drifting in front
     if (weatherIsDay) {
-      drawer.circle(new Point(x + 9, y + 4), 3).fill_color(new Color(255, 200, 20)).fill(true).execute();
+      drawer.circle(new Point(x + 9, y + 4), 3).fill_color(Palette.SUN).fill(true).execute();
     } else {
-      drawer.circle(new Point(x + 9, y + 4), 3).fill_color(new Color(230, 230, 180)).fill(true).execute();
+      drawer.circle(new Point(x + 9, y + 4), 3).fill_color(Palette.MOON).fill(true).execute();
       drawer.circle(new Point(x + 11, y + 2), 3).fill_color(Color.BLACK).fill(true).execute();
     }
     drawCloud(x + 4 + driftX(), y + 10, gray);
@@ -219,7 +231,12 @@ function drawWeatherIcon(code: i32, x: u32, y: u32): void {
         .color(fogGray).thickness(2).execute();
     }
 
-  } else if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) {
+  } else if (code >= 51 && code <= 57) {
+    // Drizzle: cloud + light droplets
+    drawCloud(cx, y + 6, gray);
+    drawDrizzle(cx, y + 10);
+
+  } else if ((code >= 58 && code <= 67) || (code >= 80 && code <= 82)) {
     // Rain: cloud + falling streaks
     drawCloud(cx, y + 6, gray);
     drawRain(cx, y + 10);
@@ -234,9 +251,9 @@ function drawWeatherIcon(code: i32, x: u32, y: u32): void {
     drawCloud(cx, y + 5, darkGray);
     const phase = animFrame % 6;
     if (phase == 0) {
-      drawBolt(cx, y + 8, new Color(255, 255, 255)); // flash!
+      drawBolt(cx, y + 8, Palette.FLASH); // flash!
     } else if (phase < 4) {
-      drawBolt(cx, y + 8, new Color(255, 220, 0));
+      drawBolt(cx, y + 8, Palette.BOLT);
     }
     // phases 4–5: bolt hidden
   }
@@ -280,13 +297,25 @@ export function render(): void {
   }
 
   drawer.clear().execute();
-  if (weatherCode < 0) return; // not loaded yet
+
+  // Hairline divider on the band's last row
+  drawer.line(new Point(0, 22), new Point(63, 22)).color(Palette.DIVIDER).execute();
+
+  // Not loaded yet: three chasing dots in the band centre
+  if (weatherCode < 0) {
+    const active = <i32>((animFrame >> 1) % 3);
+    for (let i = 0; i < 3; i++) {
+      const col = i == active ? Palette.CLOUD : Palette.CLOUD_DARK;
+      drawer.circle(new Point(26 + <u32>i * 6, 11), 1).fill_color(col).fill(true).execute();
+    }
+    return;
+  }
 
   // Icon — 14×14 at (2,1)
   drawWeatherIcon(weatherCode, 2, 1);
 
   // Temperature with drawn ° symbol — orange, bold
-  const tempCol = new Color(255, 130, 40);
+  const tempCol = Palette.ORANGE;
   const tempNum = formatTempNumber(weatherTemp);
   const numW: u32 = <u32>tempNum.length * 7; // Font7x13Bold advance
 
@@ -300,5 +329,5 @@ export function render(): void {
 
   // Condition label
   drawer.text(weatherLabel(weatherCode), new Point(20, 16))
-    .color(new Color(170, 180, 210)).font(Font.Font4x6).baseline(Baseline.Top).execute();
+    .color(Palette.TEXT_MUTED).font(Font.Font4x6).baseline(Baseline.Top).execute();
 }

@@ -8,7 +8,8 @@ import { Time } from "./lib/time";
 import { Console } from "./lib/console";
 import { Network } from "./lib/network";
 import { pollEvent, EVENT_HTTP_RESPONSE, HttpResponseEvent, EVENT_TIMER_INTERRUPT, TimerInterruptEvent } from "./lib/events";
-import { Color, Point, Rect, Duration, Font, TextAlignment, Baseline } from "./lib/types";
+import { Point, Rect, Duration, Font, TextAlignment, Baseline } from "./lib/types";
+import { Palette } from "./lib/palette";
 
 const drawer = new Drawer();
 const http = new Http();
@@ -27,6 +28,7 @@ let FETCH_TIMER_ID: u32 = 0;
 let ANIM_TIMER_ID: u32 = 0;
 let timersSetup: bool = false;
 let animFrame: u32 = 0; // advances every 200ms — drives the globe animation
+let pulseFrames: i32 = 0; // >0 → globe rim flashes bright (IP just refreshed)
 
 // ─── Requests / helpers ───────────────────────────────────────────────────────
 
@@ -52,21 +54,28 @@ function formatIpv4(bits: u32): string {
 // and the land blob slides across with it. Gray + slashed when offline.
 
 function drawGlobe(cx: u32, cy: u32, online: bool): void {
-  const ocean     = online ? new Color(20, 90, 200)   : new Color(45, 55, 70);
-  const oceanDeep = online ? new Color(10, 55, 140)   : new Color(30, 38, 50);
-  const land      = online ? new Color(60, 210, 90)   : new Color(75, 85, 95);
-  const rim       = online ? new Color(130, 200, 255) : new Color(100, 110, 125);
-  const grid      = online ? new Color(90, 160, 240)  : new Color(70, 80, 95);
+  const ocean     = online ? Palette.OCEAN      : Palette.OFF_OCEAN;
+  const oceanDeep = online ? Palette.OCEAN_DEEP : Palette.OFF_OCEAN_DEEP;
+  const land      = online ? Palette.GREEN      : Palette.OFF_LAND;
+  const grid      = online ? Palette.GLOBE_GRID : Palette.OFF_GRID;
+  // Rim flashes white for ~0.8s after a successful IP refresh
+  const rim = pulseFrames > 0 ? Palette.FLASH
+            : online          ? Palette.GLOBE_RIM
+            :                   Palette.OFF_RIM;
 
   // Ocean base (r=4) + lower-right shading for sphere depth
   drawer.circle(new Point(cx, cy), 4).fill_color(ocean).fill(true).execute();
   drawer.sector(new Point(cx, cy), 4).angle_start(0).angle_sweep(90)
     .fill_color(oceanDeep).fill(true).execute();
 
-  // Land blob sliding across the face (rotation keyframes; frozen when offline)
+  // Land blobs sliding across the face (rotation keyframes; frozen when offline)
   const phase: i32 = online ? <i32>((animFrame >> 1) % 4) : 0;
   const landX: u32[] = [0, 1, 2, 1]; // sweep left → right → back
   drawer.ellipse(new Rect(cx - 3 + landX[phase], cy - 3, 4, 3))
+    .fill_color(land).fill(true).execute();
+  // Second, smaller land mass in the southern half, half a cycle behind
+  const phase2: i32 = (phase + 2) % 4;
+  drawer.ellipse(new Rect(cx - 1 + landX[phase2], cy + 1, 3, 2))
     .fill_color(land).fill(true).execute();
 
   // Equator
@@ -88,7 +97,7 @@ function drawGlobe(cx: u32, cy: u32, online: bool): void {
   // Offline: red slash across the globe
   if (!online) {
     drawer.line(new Point(cx - 4, cy + 4), new Point(cx + 4, cy - 4))
-      .color(new Color(255, 60, 50)).thickness(2).execute();
+      .color(Palette.RED).thickness(2).execute();
   }
 }
 
@@ -112,7 +121,10 @@ export function render(): void {
     if (ev.type == EVENT_TIMER_INTERRUPT) {
       const t = ev as TimerInterruptEvent;
       if      (t.timerId == FETCH_TIMER_ID) { if (online) requestIp(); }
-      else if (t.timerId == ANIM_TIMER_ID)  animFrame++;
+      else if (t.timerId == ANIM_TIMER_ID)  {
+        animFrame++;
+        if (pulseFrames > 0) pulseFrames--;
+      }
 
     } else if (ev.type == EVENT_HTTP_RESPONSE) {
       const res = ev as HttpResponseEvent;
@@ -120,6 +132,7 @@ export function render(): void {
         ipInFlight = false;
         if (res.success) {
           publicIp = res.body;
+          pulseFrames = 4; // flash the globe rim for ~0.8s
           console.info("Public IP: " + publicIp).execute();
         } else {
           console.error("Public IP request failed").execute();
@@ -136,19 +149,25 @@ export function render(): void {
 
   if (!online) {
     drawer.text("OFFLINE", new Point(63, 3))
-      .color(new Color(255, 60, 50))
+      .color(Palette.RED)
       .font(Font.Font5x8).alignment(TextAlignment.Right).baseline(Baseline.Top).execute();
     return;
   }
 
-  // Public IP — top line, green, tiny 3×5 font
-  drawer.text(publicIp, new Point(63, 0))
-    .color(new Color(0, 200, 90))
+  // Public IP — top line, green, tiny 3×3 font.
+  // While the first fetch is pending, show a growing "..." animation.
+  let ipText = publicIp;
+  if (publicIp == "...") {
+    const n = 1 + <i32>((animFrame >> 2) % 3);
+    ipText = ".".repeat(n);
+  }
+  drawer.text(ipText, new Point(63, 1))
+    .color(Palette.GREEN)
     .font(Font.U8g2Font3x3).alignment(TextAlignment.Right).baseline(Baseline.Top).execute();
 
-  // Internal IP — bottom line, dim blue-gray, tiny 3×5 font
+  // Internal IP — bottom line, faint blue-gray, tiny 3×3 font
   const internalIp = formatIpv4(network.getInternalIp().execute());
-  drawer.text(internalIp, new Point(63, 6))
-    .color(new Color(110, 130, 170))
+  drawer.text(internalIp, new Point(63, 7))
+    .color(Palette.TEXT_FAINT)
     .font(Font.U8g2Font3x3).alignment(TextAlignment.Right).baseline(Baseline.Top).execute();
 }

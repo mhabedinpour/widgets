@@ -19,7 +19,6 @@ use embassy_time::Duration;
 use embedded_io_async::{Read, Write};
 use embedded_tls::{Aes256GcmSha384, TlsConfig, TlsConnection, TlsContext, UnsecureProvider};
 use esp_hal::rng::Rng;
-use esp_println::println;
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -354,7 +353,7 @@ async fn widget_http_task(
                     (None, None, Some(e))
                 }
             };
-        
+
         critical_section::with(|cs| {
             completed.borrow(cs).borrow_mut().push((
                 widget_id,
