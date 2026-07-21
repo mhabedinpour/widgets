@@ -2,6 +2,11 @@ use crate::drawer::{
     ArcData, Baseline, CircleData, ClearData, Color, Drawer, EllipseData, Font, LineData, Rect,
     RectData, SectorData, StrokeAlignment, TextAlignment, TextData, TriangleData,
 };
+use u8g2_fonts::{
+    FontRenderer,
+    fonts,
+    types::{FontColor, HorizontalAlignment, VerticalPosition},
+};
 use alloc::rc::Rc;
 use core::cell::RefCell;
 use embedded_graphics::{
@@ -25,6 +30,13 @@ pub fn color_to_rgb888(color: Color) -> Rgb888 {
     match color {
         Color::Rgb(r, g, b) => Rgb888::new(r, g, b),
     }
+}
+
+fn is_u8g2_font(font: Font) -> bool {
+    matches!(
+        font,
+        Font::U8g2Font3x5 | Font::U8g2Font4x6 | Font::U8g2Font5x7 | Font::U8g2Font5x8
+    )
 }
 
 fn font_ref(font: Font) -> &'static MonoFont<'static> {
@@ -51,6 +63,10 @@ fn font_ref(font: Font) -> &'static MonoFont<'static> {
         Font::Font9x18 => &FONT_9X18,
         Font::Font9x18Bold => &FONT_9X18_BOLD,
         Font::Font10x20 => &FONT_10X20,
+        // u8g2 variants are handled separately — should never reach here
+        Font::U8g2Font3x5 | Font::U8g2Font4x6 | Font::U8g2Font5x7 | Font::U8g2Font5x8 => {
+            unreachable!("u8g2 font passed to mono font_ref()")
+        }
     }
 }
 
@@ -202,6 +218,10 @@ impl<T: DrawTarget<Color = Rgb888>> Drawer for EmbeddedGraphicsDrawer<T> {
     }
 
     fn execute_text(&mut self, data: TextData) {
+        if is_u8g2_font(data.font) {
+            self.execute_text_u8g2(data);
+            return;
+        }
         let text_color = color_to_rgb888(data.color);
         let mono_font = font_ref(data.font);
 
@@ -361,5 +381,49 @@ impl<T: DrawTarget<Color = Rgb888>> Drawer for EmbeddedGraphicsDrawer<T> {
 
     fn bounds_height(&mut self) -> u32 {
         self.clip.size.height
+    }
+}
+
+impl<T: DrawTarget<Color = Rgb888>> EmbeddedGraphicsDrawer<T> {
+    fn execute_text_u8g2(&mut self, data: TextData) {
+        let color = FontColor::Transparent(color_to_rgb888(data.color));
+        let pos = Point::new(data.position.x as i32, data.position.y as i32);
+        let h_align = match data.alignment {
+            TextAlignment::Left => HorizontalAlignment::Left,
+            TextAlignment::Center => HorizontalAlignment::Center,
+            TextAlignment::Right => HorizontalAlignment::Right,
+        };
+        let v_pos = match data.baseline {
+            Baseline::Top => VerticalPosition::Top,
+            Baseline::Middle => VerticalPosition::Center,
+            Baseline::Alphabetic | Baseline::Bottom => VerticalPosition::Baseline,
+        };
+
+        macro_rules! render_u8g2 {
+            ($font:ty) => {
+                FontRenderer::new::<$font>()
+                    .render_aligned(
+                        data.text.as_str(),
+                        pos,
+                        v_pos,
+                        h_align,
+                        color,
+                        &mut self
+                            .target
+                            .borrow_mut()
+                            .clipped(&self.clip)
+                            .cropped(&self.clip),
+                    )
+                    .ok()
+            };
+        }
+
+        match data.font {
+            Font::U8g2Font3x5 => { render_u8g2!(fonts::u8g2_font_3x5im_mr); }
+            Font::U8g2Font4x6 => { render_u8g2!(fonts::u8g2_font_4x6_mf); }
+            Font::U8g2Font5x7 => { render_u8g2!(fonts::u8g2_font_5x7_mf); }
+            Font::U8g2Font5x8 => { render_u8g2!(fonts::u8g2_font_5x8_mf); }
+            _ => {}
+        }
     }
 }

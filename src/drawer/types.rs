@@ -99,12 +99,21 @@ pub enum Font {
     Font9x18 = 19,
     Font9x18Bold = 20,
     Font10x20 = 21,
+    // u8g2 fonts — rendered via the u8g2-fonts crate (smaller sizes not in mono_font)
+    /// 3×5 px — smallest available. Uses u8g2_font_3x5im_mf.
+    U8g2Font3x5 = 22,
+    /// 4×6 px u8g2 variant. Uses u8g2_font_4x6_mf.
+    U8g2Font4x6 = 23,
+    /// 5×7 px u8g2 variant. Uses u8g2_font_5x7_mf.
+    U8g2Font5x7 = 24,
+    /// 5×8 px u8g2 variant. Uses u8g2_font_5x8_mf.
+    U8g2Font5x8 = 25,
 }
 
 impl Font {
     pub fn from_int(v: u32) -> Self {
-        if v <= 21 {
-            // SAFETY: Font is #[repr(u32)] with variants 0..=21
+        if v <= 25 {
+            // SAFETY: Font is #[repr(u32)] with variants 0..=25
             unsafe { core::mem::transmute(v) }
         } else {
             Self::Font6x10

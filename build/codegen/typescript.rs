@@ -268,6 +268,14 @@ export enum Font {\n\
   Font9x18 = 19,\n\
   Font9x18Bold = 20,\n\
   Font10x20 = 21,\n\
+  /** 3×5 px — smallest available. Rendered via u8g2. */\n\
+  U8g2Font3x5 = 22,\n\
+  /** 4×6 px u8g2 variant. */\n\
+  U8g2Font4x6 = 23,\n\
+  /** 5×7 px u8g2 variant. */\n\
+  U8g2Font5x7 = 24,\n\
+  /** 5×8 px u8g2 variant. */\n\
+  U8g2Font5x8 = 25,\n\
 }\n\
 \n\
 export enum TextAlignment {\n\
