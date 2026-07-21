@@ -173,4 +173,20 @@ impl<T: DrawTarget<Color = Rgb888>> Drawer for EmbeddedGraphicsDrawer<T> {
             .clear(color_to_rgb888(data.color))
             .ok();
     }
+
+    fn bounds_x(&mut self) -> u32 {
+        self.clip.top_left.x as u32
+    }
+
+    fn bounds_y(&mut self) -> u32 {
+        self.clip.top_left.y as u32
+    }
+
+    fn bounds_width(&mut self) -> u32 {
+        self.clip.size.width
+    }
+
+    fn bounds_height(&mut self) -> u32 {
+        self.clip.size.height
+    }
 }

@@ -30,6 +30,14 @@ pub trait Drawer {
     fn execute_text(&mut self, data: TextData);
     /// @wasm builder_name="clear"
     fn execute_clear(&mut self, data: ClearData);
+    /// @wasm builder_name="boundsX"
+    fn bounds_x(&mut self) -> u32;
+    /// @wasm builder_name="boundsY"
+    fn bounds_y(&mut self) -> u32;
+    /// @wasm builder_name="boundsWidth"
+    fn bounds_width(&mut self) -> u32;
+    /// @wasm builder_name="boundsHeight"
+    fn bounds_height(&mut self) -> u32;
 }
 
 pub trait GlobalDrawer {
