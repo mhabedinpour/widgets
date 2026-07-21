@@ -41,26 +41,8 @@ use widgets::widget::{Widget, WidgetConfig, WidgetId};
 use embassy_net::{Config as NetConfig, DhcpConfig, Runner, StackResources};
 use esp_radio::wifi::{Config as WifiConfig, WifiController, sta::StationConfig};
 
-const WIFI_SSID: &str = option_env!("WIFI_SSID").unwrap_or("");
-const WIFI_PASSWORD: &str = option_env!("WIFI_PASSWORD").unwrap_or("");
-
-// ── Widget configs ─────────────────────────────────────────────────────────────
-
-fn time_config() -> WidgetConfig {
-    let mut cfg = WidgetConfig::new();
-    cfg.insert("utc_offset".into(),      "3600".into()); // CET  (UTC+1)
-    cfg.insert("utc_dst_offset".into(),  "7200".into()); // CEST (UTC+2)
-    cfg.insert("dst_start_month".into(), "3".into());    // last Sunday of March
-    cfg.insert("dst_end_month".into(),   "10".into());   // last Sunday of October
-    cfg
-}
-
-fn weather_config() -> WidgetConfig {
-    let mut cfg = WidgetConfig::new();
-    cfg.insert("lat".into(), "52.374".into()); // Amsterdam
-    cfg.insert("lon".into(), "4.899".into());  // Amsterdam
-    cfg
-}
+// Generated from config.json at build time.
+include!(concat!(env!("OUT_DIR"), "/config.rs"));
 
 static STACK_NET: StaticCell<StackResources<8>> = StaticCell::new();
 static FLUSHER_STACK: StaticCell<HalStack<2048>> = StaticCell::new();
@@ -178,23 +160,8 @@ async fn main(spawner: Spawner) -> ! {
 
     start_time_sync(spawner, stack);
 
-    let pins = Hub75Pins16 {
-        red1: peripherals.GPIO5.degrade(),
-        grn1: peripherals.GPIO6.degrade(),
-        blu1: peripherals.GPIO7.degrade(),
-        red2: peripherals.GPIO15.degrade(),
-        grn2: peripherals.GPIO16.degrade(),
-        blu2: peripherals.GPIO17.degrade(),
-        addr0: peripherals.GPIO8.degrade(),
-        addr1: peripherals.GPIO3.degrade(),
-        addr2: peripherals.GPIO46.degrade(),
-        addr3: peripherals.GPIO9.degrade(),
-        addr4: peripherals.GPIO18.degrade(),
-        blank: peripherals.GPIO12.degrade(),
-        clock: peripherals.GPIO10.degrade(),
-        latch: peripherals.GPIO11.degrade(),
-    };
-    let freq = Rate::from_mhz(20);
+    let pins = hub75_pins!(peripherals);
+    let freq = Rate::from_mhz(DISPLAY_FREQ_MHZ);
 
     let backend = LCDCAM64x64::new(pins, peripherals.LCD_CAM, peripherals.DMA_CH0, freq);
     let mut manager = WidgetManager::new(
@@ -210,33 +177,8 @@ async fn main(spawner: Spawner) -> ! {
         sw_interrupt.software_interrupt1,
         backend.0,
     );
-    
-    manager.add_widget(
-        WidgetId::new(1),
-        Widget {
-            placement: Rect::new(Point::new(0, 0), Size::new(64, 30)),
-            executor: Box::new(WasmExecutor::new(compiled_widgets::TIME).unwrap()),
-        },
-        time_config(),
-    );
 
-    manager.add_widget(
-        WidgetId::new(2),
-        Widget {
-            placement: Rect::new(Point::new(0, 28), Size::new(64, 23)),
-            executor: Box::new(WasmExecutor::new(compiled_widgets::WEATHER).unwrap()),
-        },
-        weather_config(),
-    );
-
-    manager.add_widget(
-        WidgetId::new(3),
-        Widget {
-            placement: Rect::new(Point::new(0, 51), Size::new(64, 13)),
-            executor: Box::new(WasmExecutor::new(compiled_widgets::NETWORK).unwrap()),
-        },
-        WidgetConfig::new(),
-    );
+    add_widgets!(manager);
 
     manager.render();
 

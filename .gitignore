@@ -25,6 +25,9 @@ target/
 # Ignore .DS_Store file in mac
 **/.DS_Store
 
+# Device config — contains Wi-Fi credentials; copy from config.example.json
+config.json
+
 widgets/node_modules
 widgets/*.wasm
 widgets/lib/*

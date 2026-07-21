@@ -9,6 +9,8 @@ fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     let out_path = Path::new(&out_dir);
 
+    generate_config(out_path);
+
     // Discover all services by scanning for traits annotated with @wasm.
     let services = codegen::parser::scan_services(Path::new("src"));
 
@@ -117,6 +119,118 @@ fn build_widgets(skip: &[&str]) {
         }
     }
     fs::write(dest_path.join("mod.rs"), mod_contents).unwrap();
+}
+
+fn generate_config(out_path: &Path) {
+    println!("cargo:rerun-if-changed=config.json");
+
+    let config_str = fs::read_to_string("config.json").unwrap_or_else(|_| {
+        panic!(
+            "config.json not found — copy config.example.json to config.json and fill in your settings"
+        )
+    });
+    let cfg: serde_json::Value =
+        serde_json::from_str(&config_str).expect("config.json is not valid JSON");
+
+    let mut out = String::from("// Auto-generated from config.json — do not edit.\n\n");
+
+    // ── WiFi ──────────────────────────────────────────────────────────────────
+    let ssid = cfg["wifi"]["ssid"].as_str().unwrap_or("");
+    let pass = cfg["wifi"]["password"].as_str().unwrap_or("");
+    out.push_str(&format!("const WIFI_SSID: &str = {:?};\n", ssid));
+    out.push_str(&format!("const WIFI_PASSWORD: &str = {:?};\n\n", pass));
+
+    // ── Display ───────────────────────────────────────────────────────────────
+    let freq = cfg["display"]["freq_mhz"].as_u64().unwrap_or(20);
+    out.push_str(&format!("const DISPLAY_FREQ_MHZ: u32 = {};\n\n", freq));
+
+    // Hub75 pin macro — expands to a Hub75Pins16 { ... } expression.
+    // Types are resolved at the call site (all needed imports are in main.rs).
+    let pin_fields = [
+        "red1", "grn1", "blu1", "red2", "grn2", "blu2",
+        "addr0", "addr1", "addr2", "addr3", "addr4",
+        "blank", "clock", "latch",
+    ];
+    out.push_str("macro_rules! hub75_pins {\n");
+    out.push_str("    ($p:ident) => {\n");
+    out.push_str("        Hub75Pins16 {\n");
+    for field in &pin_fields {
+        let num = cfg["display"]["pins"][field]
+            .as_u64()
+            .unwrap_or_else(|| panic!("config.json: display.pins.{} is missing", field));
+        out.push_str(&format!("            {}: $p.GPIO{}.degrade(),\n", field, num));
+    }
+    out.push_str("        }\n");
+    out.push_str("    };\n");
+    out.push_str("}\n\n");
+
+    // Widget registration macro — expands to a series of manager.add_widget(…) calls.
+    let widgets = cfg["widgets"]
+        .as_array()
+        .expect("config.json: widgets must be an array");
+
+    out.push_str("macro_rules! add_widgets {\n");
+    out.push_str("    ($manager:ident) => {\n");
+    out.push_str("        {\n");
+
+    for widget in widgets {
+        let id    = widget["id"].as_u64().expect("widget missing id");
+        let wtype = widget["type"].as_str().expect("widget missing type");
+        let x     = widget["x"].as_u64().unwrap_or(0);
+        let y     = widget["y"].as_u64().unwrap_or(0);
+        let w     = widget["width"].as_u64().expect("widget missing width");
+        let h     = widget["height"].as_u64().expect("widget missing height");
+        let wasm  = wtype.to_uppercase(); // "time" -> "TIME"
+
+        let cfg_entries: Vec<(String, String)> = widget["config"]
+            .as_object()
+            .map(|m| {
+                m.iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let cfg_var = format!("_cfg_{}", id);
+        if cfg_entries.is_empty() {
+            out.push_str(&format!(
+                "            $manager.add_widget(\n\
+                 \x20               WidgetId::new({id}),\n\
+                 \x20               Widget {{\n\
+                 \x20                   placement: Rect::new(Point::new({x}, {y}), Size::new({w}, {h})),\n\
+                 \x20                   executor: Box::new(WasmExecutor::new(compiled_widgets::{wasm}).unwrap()),\n\
+                 \x20               }},\n\
+                 \x20               WidgetConfig::new(),\n\
+                 \x20           );\n",
+                id = id, x = x, y = y, w = w, h = h, wasm = wasm,
+            ));
+        } else {
+            out.push_str(&format!("            let mut {} = WidgetConfig::new();\n", cfg_var));
+            for (k, v) in &cfg_entries {
+                out.push_str(&format!(
+                    "            {var}.insert({k:?}.into(), {v:?}.into());\n",
+                    var = cfg_var, k = k, v = v,
+                ));
+            }
+            out.push_str(&format!(
+                "            $manager.add_widget(\n\
+                 \x20               WidgetId::new({id}),\n\
+                 \x20               Widget {{\n\
+                 \x20                   placement: Rect::new(Point::new({x}, {y}), Size::new({w}, {h})),\n\
+                 \x20                   executor: Box::new(WasmExecutor::new(compiled_widgets::{wasm}).unwrap()),\n\
+                 \x20               }},\n\
+                 \x20               {var},\n\
+                 \x20           );\n",
+                id = id, x = x, y = y, w = w, h = h, wasm = wasm, var = cfg_var,
+            ));
+        }
+    }
+
+    out.push_str("        }\n");
+    out.push_str("    };\n");
+    out.push_str("}\n");
+
+    fs::write(out_path.join("config.rs"), &out).unwrap();
 }
 
 fn linker_be_nice() {
