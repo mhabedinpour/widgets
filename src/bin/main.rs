@@ -31,17 +31,36 @@ use widgets::compiled_widgets;
 use widgets::console::ConsoleLogger;
 use widgets::drawer::{Point, Rect, Size};
 use widgets::http::HttpService;
+use widgets::network::NetworkService;
 use widgets::time_sync::start as start_time_sync;
 use widgets::time::timer::TimeService;
 use widgets::widget::executor::wasm::WasmExecutor;
 use widgets::widget::manager::WidgetManager;
-use widgets::widget::{Widget, WidgetId};
+use widgets::widget::{Widget, WidgetConfig, WidgetId};
 
 use embassy_net::{Config as NetConfig, DhcpConfig, Runner, StackResources};
 use esp_radio::wifi::{Config as WifiConfig, WifiController, sta::StationConfig};
 
 const WIFI_SSID: &str = option_env!("WIFI_SSID").unwrap_or("");
 const WIFI_PASSWORD: &str = option_env!("WIFI_PASSWORD").unwrap_or("");
+
+// ── Widget configs ─────────────────────────────────────────────────────────────
+
+fn time_config() -> WidgetConfig {
+    let mut cfg = WidgetConfig::new();
+    cfg.insert("utc_offset".into(),      "3600".into()); // CET  (UTC+1)
+    cfg.insert("utc_dst_offset".into(),  "7200".into()); // CEST (UTC+2)
+    cfg.insert("dst_start_month".into(), "3".into());    // last Sunday of March
+    cfg.insert("dst_end_month".into(),   "10".into());   // last Sunday of October
+    cfg
+}
+
+fn weather_config() -> WidgetConfig {
+    let mut cfg = WidgetConfig::new();
+    cfg.insert("lat".into(), "52.374".into()); // Amsterdam
+    cfg.insert("lon".into(), "4.899".into());  // Amsterdam
+    cfg
+}
 
 static STACK_NET: StaticCell<StackResources<8>> = StaticCell::new();
 static FLUSHER_STACK: StaticCell<HalStack<2048>> = StaticCell::new();
@@ -183,6 +202,7 @@ async fn main(spawner: Spawner) -> ! {
         TimeService::new(),
         HttpService::new(spawner, stack),
         ConsoleLogger::new(),
+        NetworkService::new(stack),
     );
 
     init_display_flusher(
@@ -194,9 +214,28 @@ async fn main(spawner: Spawner) -> ! {
     manager.add_widget(
         WidgetId::new(1),
         Widget {
-            placement: Rect::new(Point::new(0, 0), Size::new(64, 64)),
-            executor: Box::new(WasmExecutor::new(compiled_widgets::SAMPLE).unwrap()),
+            placement: Rect::new(Point::new(0, 0), Size::new(64, 30)),
+            executor: Box::new(WasmExecutor::new(compiled_widgets::TIME).unwrap()),
         },
+        time_config(),
+    );
+
+    manager.add_widget(
+        WidgetId::new(2),
+        Widget {
+            placement: Rect::new(Point::new(0, 30), Size::new(64, 23)),
+            executor: Box::new(WasmExecutor::new(compiled_widgets::WEATHER).unwrap()),
+        },
+        weather_config(),
+    );
+
+    manager.add_widget(
+        WidgetId::new(3),
+        Widget {
+            placement: Rect::new(Point::new(0, 53), Size::new(64, 11)),
+            executor: Box::new(WasmExecutor::new(compiled_widgets::NETWORK).unwrap()),
+        },
+        WidgetConfig::new(),
     );
 
     manager.render();

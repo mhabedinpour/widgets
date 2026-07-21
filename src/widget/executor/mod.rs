@@ -5,7 +5,7 @@ use crate::drawer::Drawer;
 use crate::http::Http;
 use crate::network::Network;
 use crate::time::Time;
-use crate::widget::WidgetEvent;
+use crate::widget::{WidgetConfig, WidgetEvent};
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
@@ -15,6 +15,7 @@ pub struct Context {
     pub http: Box<dyn Http>,
     pub console: Box<dyn Console>,
     pub network: Box<dyn Network>,
+    pub config: WidgetConfig,
 }
 
 pub trait Executor {

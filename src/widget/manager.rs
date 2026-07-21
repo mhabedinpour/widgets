@@ -4,7 +4,7 @@ use crate::http::GlobalHttpClient;
 use crate::network::GlobalNetwork;
 use crate::time::GlobalTime;
 use crate::widget::executor::Context;
-use crate::widget::{Widget, WidgetEvent, WidgetId};
+use crate::widget::{Widget, WidgetConfig, WidgetEvent, WidgetId};
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
@@ -29,13 +29,14 @@ impl<D: GlobalDrawer, T: GlobalTime, H: GlobalHttpClient, C: GlobalConsole, N: G
         }
     }
 
-    pub fn add_widget(&mut self, id: WidgetId, mut widget: Widget) {
+    pub fn add_widget(&mut self, id: WidgetId, mut widget: Widget, config: WidgetConfig) {
         widget.executor.set_ctx(Context {
             drawer: self.drawer.scoped(widget.placement),
             time: self.timer.scoped(id),
             http: self.http.scoped(id),
             console: self.console.scoped(id),
             network: self.network.scoped(id),
+            config,
         });
 
         self.widgets.insert(id, widget);

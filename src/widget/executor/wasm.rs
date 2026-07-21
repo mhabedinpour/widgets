@@ -61,6 +61,86 @@ struct NetworkModule;
 
 include!(concat!(env!("OUT_DIR"), "/network_wasm_bindings.rs"));
 
+struct ConfigModule;
+
+impl HostModule for ConfigModule {
+    fn name(&self) -> &str { "config" }
+
+    fn register(
+        &self,
+        linker: &mut Linker<WasmCtx>,
+        store: &mut Store<WasmCtx>,
+    ) -> Result<(), wasmi::Error> {
+        linker.define(
+            self.name(),
+            "get",
+            wasmi::Func::wrap(
+                &mut *store,
+                |mut caller: Caller<'_, WasmCtx>,
+                 key_len: u32,
+                 key_ptr: u32,
+                 out_max: u32,
+                 out_ptr: u32|
+                 -> Result<i32, wasmi::Error> {
+                    let memory = match caller.get_export("memory") {
+                        Some(wasmi::Extern::Memory(m)) => m,
+                        _ => return Err(wasmi::Error::new("guest memory export missing")),
+                    };
+
+                    // Read the key into an owned String so we can release the
+                    // immutable borrow before writing back to memory.
+                    let key: alloc::string::String = {
+                        let start = key_ptr as usize;
+                        let end = start
+                            .checked_add(key_len as usize)
+                            .ok_or_else(|| wasmi::Error::new("key pointer overflow"))?;
+                        let bytes = memory
+                            .data(&caller)
+                            .get(start..end)
+                            .ok_or_else(|| wasmi::Error::new("out-of-bounds key pointer"))?;
+                        let s = core::str::from_utf8(bytes)
+                            .map_err(|_| wasmi::Error::new("key is not valid UTF-8"))?;
+                        alloc::string::String::from(s)
+                    };
+
+                    // Look up the value and copy bytes; releases the data borrow.
+                    let value_bytes: Option<alloc::vec::Vec<u8>> = {
+                        crate::use_sram_heap();
+                        let result = caller
+                            .data()
+                            .ctx
+                            .as_ref()
+                            .unwrap()
+                            .config
+                            .get(key.as_str())
+                            .map(|v| v.as_bytes().to_vec());
+                        crate::use_psram_heap();
+                        result
+                    };
+
+                    match value_bytes {
+                        None => Ok(-1i32),
+                        Some(bytes) => {
+                            let write_len = bytes.len().min(out_max as usize);
+                            let start = out_ptr as usize;
+                            let end = start
+                                .checked_add(write_len)
+                                .ok_or_else(|| wasmi::Error::new("output pointer overflow"))?;
+                            memory
+                                .data_mut(&mut caller)
+                                .get_mut(start..end)
+                                .ok_or_else(|| wasmi::Error::new("out-of-bounds output pointer"))?
+                                .copy_from_slice(&bytes[..write_len]);
+                            Ok(write_len as i32)
+                        }
+                    }
+                },
+            ),
+        )?;
+        Ok(())
+    }
+}
+
 struct EnvModule;
 
 impl HostModule for EnvModule {
@@ -124,6 +204,7 @@ impl WasmExecutor {
         HttpModule.register(&mut linker, &mut store)?;
         ConsoleModule.register(&mut linker, &mut store)?;
         NetworkModule.register(&mut linker, &mut store)?;
+        ConfigModule.register(&mut linker, &mut store)?;
 
         let instance = linker.instantiate_and_start(&mut store, &module)?;
         let render_func = instance.get_typed_func::<(), ()>(&store, "render")?;
