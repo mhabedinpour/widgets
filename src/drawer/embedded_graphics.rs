@@ -35,7 +35,11 @@ pub fn color_to_rgb888(color: Color) -> Rgb888 {
 fn is_u8g2_font(font: Font) -> bool {
     matches!(
         font,
-        Font::U8g2Font3x5 | Font::U8g2Font4x6 | Font::U8g2Font5x7 | Font::U8g2Font5x8
+        Font::U8g2Font3x3
+            | Font::U8g2Font3x5
+            | Font::U8g2Font4x6
+            | Font::U8g2Font5x7
+            | Font::U8g2Font5x8
     )
 }
 
@@ -64,7 +68,11 @@ fn font_ref(font: Font) -> &'static MonoFont<'static> {
         Font::Font9x18Bold => &FONT_9X18_BOLD,
         Font::Font10x20 => &FONT_10X20,
         // u8g2 variants are handled separately — should never reach here
-        Font::U8g2Font3x5 | Font::U8g2Font4x6 | Font::U8g2Font5x7 | Font::U8g2Font5x8 => {
+        Font::U8g2Font3x3
+        | Font::U8g2Font3x5
+        | Font::U8g2Font4x6
+        | Font::U8g2Font5x7
+        | Font::U8g2Font5x8 => {
             unreachable!("u8g2 font passed to mono font_ref()")
         }
     }
@@ -419,6 +427,7 @@ impl<T: DrawTarget<Color = Rgb888>> EmbeddedGraphicsDrawer<T> {
         }
 
         match data.font {
+            Font::U8g2Font3x3 => { render_u8g2!(fonts::u8g2_font_3x3basic_tr); }
             Font::U8g2Font3x5 => { render_u8g2!(fonts::u8g2_font_3x5im_mr); }
             Font::U8g2Font4x6 => { render_u8g2!(fonts::u8g2_font_4x6_mf); }
             Font::U8g2Font5x7 => { render_u8g2!(fonts::u8g2_font_5x7_mf); }

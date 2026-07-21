@@ -276,6 +276,8 @@ export enum Font {\n\
   U8g2Font5x7 = 24,\n\
   /** 5×8 px u8g2 variant. */\n\
   U8g2Font5x8 = 25,\n\
+  /** 3×3 px — absolute minimum. Restricted charset: uppercase + digits only. */\n\
+  U8g2Font3x3 = 26,\n\
 }\n\
 \n\
 export enum TextAlignment {\n\

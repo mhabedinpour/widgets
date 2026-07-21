@@ -108,12 +108,14 @@ pub enum Font {
     U8g2Font5x7 = 24,
     /// 5×8 px u8g2 variant. Uses u8g2_font_5x8_mf.
     U8g2Font5x8 = 25,
+    /// 3×3 px — absolute minimum. Uses u8g2_font_3x3basic_tr (restricted charset: uppercase + digits).
+    U8g2Font3x3 = 26,
 }
 
 impl Font {
     pub fn from_int(v: u32) -> Self {
-        if v <= 25 {
-            // SAFETY: Font is #[repr(u32)] with variants 0..=25
+        if v <= 26 {
+            // SAFETY: Font is #[repr(u32)] with variants 0..=26
             unsafe { core::mem::transmute(v) }
         } else {
             Self::Font6x10
