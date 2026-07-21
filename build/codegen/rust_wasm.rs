@@ -65,9 +65,11 @@ fn render_binding(binding: &BindingDef, service_name: &str) -> String {
 
     let params = all_params.join(", ");
     let sep = if params.is_empty() { "" } else { ", " };
+    // Closures always return Result so field converters can trap the guest
+    // (via `Err(wasmi::Error)`) on invalid input instead of panicking.
     let ret_sig = match &binding.return_expansion {
-        Some(re) => format!(" -> {}", rust_abi_ty(re.abi[0].ty)),
-        None => String::new(),
+        Some(re) => format!(" -> Result<{}, wasmi::Error>", rust_abi_ty(re.abi[0].ty)),
+        None => " -> Result<(), wasmi::Error>".to_string(),
     };
     let data_construction = render_data_construction(binding, service_name);
     let call_stmt = render_call_stmt(binding, service_name);
@@ -106,7 +108,7 @@ fn render_data_construction(binding: &BindingDef, service_name: &str) -> String 
         .collect();
     render(
         "                    let data = crate::%svc%::%dtype% {\n%fields%                    };\n",
-        &[("svc", service_name), ("dtype", &binding.data_type), ("fields", &field_lines)],
+        &[("svc", service_name), ("dtype", binding.data_type.as_deref().unwrap()), ("fields", &field_lines)],
     )
 }
 
@@ -116,12 +118,24 @@ fn render_call_stmt(binding: &BindingDef, service_name: &str) -> String {
     } else {
         format!("caller.data_mut().ctx.as_mut().unwrap().{service_name}.{}(data)", binding.executor_method)
     };
+    // Service calls run on the SRAM heap; everything else in the binding
+    // (field decoding, the guest itself) stays on the PSRAM heap.
     match &binding.return_expansion {
         Some(re) => {
             let to_abi = render(&re.rust_to_abi.exprs[0], &[("v", "__ret")]);
-            format!("let __ret = {call};\n                    {to_abi}")
+            format!(
+                "crate::use_sram_heap();\n                    \
+                 let __ret = {call};\n                    \
+                 crate::use_psram_heap();\n                    \
+                 Ok({to_abi})"
+            )
         }
-        None => format!("{call};"),
+        None => format!(
+            "crate::use_sram_heap();\n                    \
+             {call};\n                    \
+             crate::use_psram_heap();\n                    \
+             Ok(())"
+        ),
     }
 }
 

@@ -10,7 +10,7 @@ pub struct ServiceDef {
 pub struct BindingDef {
     pub executor_method: String, // "execute_rect" — also used as the WASM export name
     pub builder_name: String,    // "rect" — used for TS factory method and builder class name
-    pub data_type: String,       // "RectData"
+    pub data_type: Option<String>, // "RectData", or None for zero-arg methods
     pub fields: Vec<FieldDef>,
     /// Fully expanded return-type data, or `None` for void.
     pub return_expansion: Option<Expansion>,

@@ -75,11 +75,12 @@ fn try_parse_service_from_file(path: &Path) -> Option<ServiceDef> {
                             panic!("@wasm on `{executor_method}` missing builder_name=")
                         });
                     let return_expansion = infer_return_expansion(&method.sig.output, &executor_method);
-                    let data_type = extract_data_param_type(&method.sig).unwrap_or_else(|| {
-                        panic!("@wasm method `{executor_method}` has no data parameter")
-                    });
+                    let data_type = extract_data_param_type(&method.sig);
 
-                    let fields = find_struct_fields(&structs, &data_type);
+                    let fields = match &data_type {
+                        Some(dt) => find_struct_fields(&structs, dt),
+                        None => Vec::new(),
+                    };
 
                     bindings.push(BindingDef {
                         executor_method,
@@ -175,7 +176,9 @@ fn path_type_name(ty: &Type) -> String {
             .ident
             .to_string(),
         Type::Reference(r) => path_type_name(&r.elem),
-        other => panic!("unexpected parameter type in @wasm method: {other:?}"),
+        _ => panic!(
+            "unexpected parameter type in @wasm method (only path types and references are supported)"
+        ),
     }
 }
 
@@ -195,7 +198,9 @@ fn infer_return_expansion(output: &syn::ReturnType, method_name: &str) -> Option
                     .to_string();
                 Some(expand_return(&seg, method_name))
             }
-            other => panic!("Unsupported return type shape on `{method_name}`: {other:?}"),
+            _ => panic!(
+                "Unsupported return type shape on `{method_name}` (only plain path types are supported)"
+            ),
         },
     }
 }
@@ -274,7 +279,17 @@ fn type_name_from_syn(ty: &Type, context: &str, field: &str) -> String {
             }
             ident
         }
-        other => panic!("Unsupported type shape on {context}::{field}: {other:?}"),
+        Type::Tuple(t) => {
+            let elems: Vec<String> = t
+                .elems
+                .iter()
+                .map(|e| type_name_from_syn(e, context, field))
+                .collect();
+            format!("({})", elems.join(", "))
+        }
+        _ => panic!(
+            "Unsupported type shape on {context}::{field} (only path types, references, and tuples are supported)"
+        ),
     }
 }
 

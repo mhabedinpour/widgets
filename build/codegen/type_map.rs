@@ -201,7 +201,7 @@ pub fn expand(
                 read_guest_bytes(name) + &render(
                     r#"                    let %n%_utf8 = match core::str::from_utf8(%n%_bytes) {
                         Ok(s) => s,
-                        Err(_) => return,
+                        Err(_) => return Err(wasmi::Error::new("field `%n%` is not valid UTF-8")),
                     };
                     let mut %n%_buf = alloc::string::String::new();
                     %n%_buf.push_str(%n%_utf8);
@@ -238,7 +238,17 @@ pub fn expand(
             ta_default: Some("0".to_string()),
             abi: vec![abi(name.to_string(), "u32")],
             rust_to_abi: expr("(%v%).0".to_string()),
-            abi_to_rust: expr(format!("crate::timer::TimerId({name})")),
+            abi_to_rust: expr(format!("crate::time::TimerId({name})")),
+            ts_to_abi: expr("%v%".to_string()),
+            abi_to_ts: expr(name.to_string()),
+        },
+
+        "RequestId" => Expansion {
+            ta_type: "u32".to_string(),
+            ta_default: Some("0".to_string()),
+            abi: vec![abi(name.to_string(), "u32")],
+            rust_to_abi: expr("(%v%).0".to_string()),
+            abi_to_rust: expr(format!("crate::http::RequestId({name})")),
             ts_to_abi: expr("%v%".to_string()),
             abi_to_ts: expr(name.to_string()),
         },
@@ -285,11 +295,12 @@ pub fn expand_return(type_name: &str, method_name: &str) -> Expansion {
 fn array_expansion(name: &str, elem: &str, context: &str) -> Expansion {
     match elem {
         "str" | "String" => string_array_expansion(name),
+        "(String, String)" | "(str, str)" => string_pair_array_expansion(name),
         _ => match int_elem(elem) {
             Some((ts_elem, size, shift)) => int_array_expansion(name, elem, ts_elem, size, shift),
             None => panic!(
                 "Unsupported array element type `{elem}` on {context}::{name}. \
-                 Supported: integer scalars and String."
+                 Supported: integer scalars, String, and (String, String)."
             ),
         },
     }
@@ -370,26 +381,7 @@ fn string_array_expansion(name: &str) -> Expansion {
             "{ let mut __b: alloc::vec::Vec<u8> = alloc::vec::Vec::new(); for __s in (%v%).iter() { __b.extend_from_slice(&(__s.len() as u32).to_le_bytes()); __b.extend_from_slice(__s.as_bytes()); } __b }".to_string(),
         ]),
         abi_to_rust: conv(
-            read_guest_bytes(name) + &render(
-                r#"                    let mut %n%_vec: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
-                    let mut %n%_off = 0usize;
-                    while %n%_off + 4 <= %n%_bytes.len() {
-                        let %n%_slen = u32::from_le_bytes([%n%_bytes[%n%_off], %n%_bytes[%n%_off + 1], %n%_bytes[%n%_off + 2], %n%_bytes[%n%_off + 3]]) as usize;
-                        %n%_off += 4;
-                        let %n%_chunk = match %n%_bytes.get(%n%_off..%n%_off + %n%_slen) {
-                            Some(b) => b,
-                            None => break,
-                        };
-                        let %n%_s = match core::str::from_utf8(%n%_chunk) {
-                            Ok(s) => s,
-                            Err(_) => break,
-                        };
-                        %n%_vec.push(alloc::string::String::from(%n%_s));
-                        %n%_off += %n%_slen;
-                    }
-"#,
-                &[("n", name)],
-            ),
+            read_guest_bytes(name) + &rust_parse_packed_strings(name, &format!("{name}_vec")),
             vec![format!("{name}_vec")],
         ),
         ts_to_abi: conv(
@@ -401,18 +393,9 @@ fn string_array_expansion(name: &str) -> Expansion {
       __%n%_enc.push(__%n%_b);
       __%n%_total += 4 + __%n%_b.byteLength;
     }
-    const __%n%_buf = new ArrayBuffer(__%n%_total);
-    let __%n%_off = changetype<usize>(__%n%_buf);
-    for (let __%n%_i = 0; __%n%_i < __%n%_enc.length; __%n%_i++) {
-      const __%n%_b = __%n%_enc[__%n%_i];
-      store<u32>(__%n%_off, __%n%_b.byteLength);
-      __%n%_off += 4;
-      memory.copy(__%n%_off, changetype<usize>(__%n%_b), __%n%_b.byteLength);
-      __%n%_off += __%n%_b.byteLength;
-    }
 "#,
                 &[("n", name)],
-            ),
+            ) + &ts_pack_strings(name),
             vec![
                 format!("__{name}_buf.byteLength"),
                 format!("changetype<usize>(__{name}_buf)"),
@@ -436,23 +419,143 @@ fn string_array_expansion(name: &str) -> Expansion {
     }
 }
 
+/// `Vec<(String, String)>` ⇄ `string[][]` — e.g. HTTP headers. Uses the same
+/// packed string encoding as `Vec<String>` with the pairs flattened in order
+/// (k1, v1, k2, v2, …) and regrouped on decode.
+fn string_pair_array_expansion(name: &str) -> Expansion {
+    Expansion {
+        ta_type: "string[][]".to_string(),
+        ta_default: Some("[]".to_string()),
+        abi: vec![
+            abi(format!("{name}_len"), "u32"),
+            abi(format!("{name}_ptr"), "usize"),
+        ],
+        rust_to_abi: conv(String::new(), vec![
+            "(%v%).iter().map(|__p| 8 + __p.0.len() + __p.1.len()).sum::<usize>() as u32".to_string(),
+            "{ let mut __b: alloc::vec::Vec<u8> = alloc::vec::Vec::new(); for __p in (%v%).iter() { __b.extend_from_slice(&(__p.0.len() as u32).to_le_bytes()); __b.extend_from_slice(__p.0.as_bytes()); __b.extend_from_slice(&(__p.1.len() as u32).to_le_bytes()); __b.extend_from_slice(__p.1.as_bytes()); } __b }".to_string(),
+        ]),
+        abi_to_rust: conv(
+            read_guest_bytes(name)
+                + &rust_parse_packed_strings(name, &format!("{name}_flat"))
+                + &render(
+                    r#"                    let mut %n%_vec: alloc::vec::Vec<(alloc::string::String, alloc::string::String)> = alloc::vec::Vec::new();
+                    let mut %n%_flat_it = %n%_flat.into_iter();
+                    while let (Some(%n%_k), Some(%n%_v)) = (%n%_flat_it.next(), %n%_flat_it.next()) {
+                        %n%_vec.push((%n%_k, %n%_v));
+                    }
+"#,
+                    &[("n", name)],
+                ),
+            vec![format!("{name}_vec")],
+        ),
+        ts_to_abi: conv(
+            render(
+                r#"    let __%n%_total = 0;
+    const __%n%_enc = new Array<ArrayBuffer>();
+    for (let __%n%_i = 0; __%n%_i < (%v%).length; __%n%_i++) {
+      const __%n%_pair = (%v%)[__%n%_i];
+      for (let __%n%_j = 0; __%n%_j < __%n%_pair.length; __%n%_j++) {
+        const __%n%_b = String.UTF8.encode(__%n%_pair[__%n%_j]);
+        __%n%_enc.push(__%n%_b);
+        __%n%_total += 4 + __%n%_b.byteLength;
+      }
+    }
+"#,
+                &[("n", name)],
+            ) + &ts_pack_strings(name),
+            vec![
+                format!("__{name}_buf.byteLength"),
+                format!("changetype<usize>(__{name}_buf)"),
+            ],
+        ),
+        abi_to_ts: conv(
+            render(
+                r#"    const %n%_arr = new Array<string[]>();
+    let %n%_off: usize = 0;
+    while (%n%_off + 4 <= <usize>%n%_len) {
+      const %n%_klen = load<u32>(%n%_ptr + %n%_off);
+      %n%_off += 4;
+      const %n%_k = String.UTF8.decodeUnsafe(%n%_ptr + %n%_off, %n%_klen);
+      %n%_off += %n%_klen;
+      if (%n%_off + 4 > <usize>%n%_len) break;
+      const %n%_vlen = load<u32>(%n%_ptr + %n%_off);
+      %n%_off += 4;
+      const %n%_v = String.UTF8.decodeUnsafe(%n%_ptr + %n%_off, %n%_vlen);
+      %n%_off += %n%_vlen;
+      %n%_arr.push([%n%_k, %n%_v]);
+    }
+"#,
+                &[("n", name)],
+            ),
+            vec![format!("{name}_arr")],
+        ),
+    }
+}
+
 // ── Internal helpers ──────────────────────────────────────────────────────────
+
+/// Host-side loop that parses the packed `u32 len | utf8 bytes` encoding out
+/// of `{n}_bytes` into `let mut {out}: Vec<String>`.
+fn rust_parse_packed_strings(name: &str, out: &str) -> String {
+    render(
+        r#"                    let mut %out%: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
+                    let mut %n%_off = 0usize;
+                    while %n%_off + 4 <= %n%_bytes.len() {
+                        let %n%_slen = u32::from_le_bytes([%n%_bytes[%n%_off], %n%_bytes[%n%_off + 1], %n%_bytes[%n%_off + 2], %n%_bytes[%n%_off + 3]]) as usize;
+                        %n%_off += 4;
+                        let %n%_chunk = match %n%_bytes.get(%n%_off..%n%_off + %n%_slen) {
+                            Some(b) => b,
+                            None => break,
+                        };
+                        let %n%_s = match core::str::from_utf8(%n%_chunk) {
+                            Ok(s) => s,
+                            Err(_) => break,
+                        };
+                        %out%.push(alloc::string::String::from(%n%_s));
+                        %n%_off += %n%_slen;
+                    }
+"#,
+        &[("n", name), ("out", out)],
+    )
+}
+
+/// TA-side loop that writes the ArrayBuffers collected in `__{n}_enc` into a
+/// single `__{n}_buf` using the packed `u32 len | utf8 bytes` encoding.
+/// Expects `__{n}_total` to hold the total byte size.
+fn ts_pack_strings(name: &str) -> String {
+    render(
+        r#"    const __%n%_buf = new ArrayBuffer(__%n%_total);
+    let __%n%_off = changetype<usize>(__%n%_buf);
+    for (let __%n%_i = 0; __%n%_i < __%n%_enc.length; __%n%_i++) {
+      const __%n%_b = __%n%_enc[__%n%_i];
+      store<u32>(__%n%_off, __%n%_b.byteLength);
+      __%n%_off += 4;
+      memory.copy(__%n%_off, changetype<usize>(__%n%_b), __%n%_b.byteLength);
+      __%n%_off += __%n%_b.byteLength;
+    }
+"#,
+        &[("n", name)],
+    )
+}
 
 /// Host-side preamble that bounds-checks and borrows `{n}_len` bytes of guest
 /// memory at `{n}_ptr` as `{n}_bytes`. Shared by String and all array types.
+/// Traps the guest (`return Err(wasmi::Error)`) on invalid input, so the
+/// enclosing closure must return `Result<_, wasmi::Error>`.
 fn read_guest_bytes(name: &str) -> String {
     render(
         r#"                    let %n%_memory = match caller.get_export("memory") {
                         Some(wasmi::Extern::Memory(m)) => m,
-                        _ => return,
+                        _ => return Err(wasmi::Error::new("guest memory export missing")),
                     };
                     let %n%_start = %n%_ptr as usize;
-                    let %n%_end = %n%_start + %n%_len as usize;
-                    let %n%_memory_data = %n%_memory.data(&caller);
-                    if %n%_end > %n%_memory_data.len() { return; }
-                    let %n%_bytes = match %n%_memory_data.get(%n%_start..%n%_end) {
+                    let %n%_end = match %n%_start.checked_add(%n%_len as usize) {
+                        Some(e) => e,
+                        None => return Err(wasmi::Error::new("guest pointer overflow for `%n%`")),
+                    };
+                    let %n%_bytes = match %n%_memory.data(&caller).get(%n%_start..%n%_end) {
                         Some(b) => b,
-                        None => return,
+                        None => return Err(wasmi::Error::new("out-of-bounds guest pointer for `%n%`")),
                     };
 "#,
         &[("n", name)],

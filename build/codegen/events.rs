@@ -150,20 +150,22 @@ fn render_copy_accessor(
             "%func_name%",
             wasmi::Func::wrap(
                 &mut *store,
-                |mut caller: Caller<'_, WasmCtx>, ptr: u32| {
+                |mut caller: Caller<'_, WasmCtx>, ptr: u32| -> Result<(), wasmi::Error> {
                     let bytes: alloc::vec::Vec<u8> = {
                         let ctx = caller.data_mut();
                         if let Some(idx) = ctx.event_cursor {
                             if let Some(crate::widget::WidgetEvent::%variant% { %field%, .. }) = ctx.event_queue.get(idx) {
                                 %bytes_expr%
-                            } else { return; }
-                        } else { return; }
+                            } else { return Ok(()); }
+                        } else { return Ok(()); }
                     };
                     let memory = match caller.get_export("memory") {
                         Some(wasmi::Extern::Memory(m)) => m,
-                        _ => return,
+                        _ => return Err(wasmi::Error::new("guest memory export missing")),
                     };
-                    let _ = memory.write(&mut caller, ptr as usize, &bytes);
+                    memory.write(&mut caller, ptr as usize, &bytes)
+                        .map_err(|_| wasmi::Error::new("out-of-bounds guest pointer in %func_name%"))?;
+                    Ok(())
                 },
             ),
         )?;"#,
