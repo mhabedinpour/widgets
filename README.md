@@ -27,25 +27,25 @@ With WASM, each widget is an isolated module with its own memory and a well-defi
 │  widgets/*.ts ──▶  asc (WASM)    ──┘                     │
 └──────────────────────────────────────────────────────────┘
 
-         Core 0 (Embassy async)
-┌─────────────────────────────────────────────────────────┐
-│  WidgetManager                                          │
-│  ┌───────────┐  ┌───────────┐  ┌──────────────────────┐ │
-│  │  Widget A │  │  Widget B │  │      Widget C        │ │
-│  │  WasmExec │  │  WasmExec │  │      WasmExec        │ │
-│  └─────┬─────┘  └─────┬─────┘  └──────────┬───────────┘ │
-│        └──────────────┴──────────────────┐│             │
-│                   host bindings          ││             │
-│  ┌──────────┐ ┌──────┐ ┌──────┐ ┌──────┐ ││             │
-│  │  Drawer  │ │ Time │ │ HTTP │ │ Net  │ ││             │
-│  └────┬─────┘ └──────┘ └──────┘ └──────┘ ││             │
-└───────┼────────────────────────────────── ┘│            │
-        │ flush()                            │            │
-        ▼                                    │            │
-   Framebuffer                       Events (timer /      │
-        │                            HTTP response)       │
-        ▼         Core 1 (bare loop)                      │
-   HUB75 DMA ──▶  LED Matrix                              │
+                    Core 0 (Embassy async)
+┌───────────────────────────────────────────────────────────────┐
+│  WidgetManager                                                │
+│  ┌───────────┐      ┌───────────┐      ┌───────────┐          │
+│  │  Widget A │      │  Widget B │      │  Widget C │          │
+│  │  WasmExec │      │  WasmExec │      │  WasmExec │          │
+│  └─────┬─────┘      └─────┬─────┘      └─────┬─────┘          │
+│        └──────────────────┴──────────────────┘                │
+│                       host bindings                           │
+│        ┌──────────┐ ┌──────┐ ┌──────┐ ┌──────┐                │
+│        │  Drawer  │ │ Time │ │ HTTP │ │ Net  │                │
+│        └─────┬────┘ └──────┘ └──────┘ └──────┘                │
+└──────────────┼────────────────────────────────────────────────┘
+               │ flush()                  events (timer / HTTP)
+               ▼
+          Framebuffer
+               │
+               ▼    Core 1 (bare loop)
+          HUB75 DMA ──▶  LED Matrix
 ```
 
 ### Key components
@@ -95,7 +95,7 @@ With WASM, each widget is an isolated module with its own memory and a well-defi
 
 You need:
 
-- **ESP32-S3** dev board (any variant with enough flash; 8 MB recommended)
+- **ESP32-S3** dev board with **PSRAM** (e.g. ESP32-S3-WROOM-1 N8R8) — PSRAM is required; the WASM runtime and widget heap are allocated there, and internal SRAM alone is not enough
 - **64×64 HUB75 LED matrix panel** (standard 2121 or 3535 LEDs, 1/32 scan)
 - **5 V power supply** — the matrix alone can draw 4–10 A at full brightness; do not power it from the ESP's USB port
 - Jumper wires or a custom PCB
@@ -203,7 +203,7 @@ The build script compiles all `widgets/*.ts` files to WASM and embeds them in th
 ### Flash
 
 ```bash
-espflash flash --monitor target/xtensa-esp32s3-none-elf/release/widgets
+cargo run --release
 ```
 
 ---
