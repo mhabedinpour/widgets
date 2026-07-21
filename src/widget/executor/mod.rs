@@ -1,5 +1,6 @@
 pub mod wasm;
 
+use crate::console::Console;
 use crate::drawer::Drawer;
 use crate::http::Http;
 use crate::time::Time;
@@ -11,6 +12,7 @@ pub struct Context {
     pub drawer: Box<dyn Drawer>,
     pub time: Box<dyn Time>,
     pub http: Box<dyn Http>,
+    pub console: Box<dyn Console>,
 }
 
 pub trait Executor {

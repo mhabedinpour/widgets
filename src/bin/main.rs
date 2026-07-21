@@ -28,6 +28,7 @@ use log::info;
 use static_cell::StaticCell;
 use widgets::backend::lcd::{LCDCAM64x64, LCDCAM64x64Flusher};
 use widgets::compiled_widgets;
+use widgets::console::ConsoleLogger;
 use widgets::drawer::{Point, Rect, Size};
 use widgets::http::HttpService;
 use widgets::time_sync::start as start_time_sync;
@@ -181,6 +182,7 @@ async fn main(spawner: Spawner) -> ! {
         backend.1,
         TimeService::new(),
         HttpService::new(spawner, stack),
+        ConsoleLogger::new(),
     );
 
     init_display_flusher(

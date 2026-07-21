@@ -1,3 +1,4 @@
+use crate::console::GlobalConsole;
 use crate::drawer::GlobalDrawer;
 use crate::http::GlobalHttpClient;
 use crate::time::GlobalTime;
@@ -6,20 +7,22 @@ use crate::widget::{Widget, WidgetEvent, WidgetId};
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-pub struct WidgetManager<D: GlobalDrawer, T: GlobalTime, H: GlobalHttpClient> {
+pub struct WidgetManager<D: GlobalDrawer, T: GlobalTime, H: GlobalHttpClient, C: GlobalConsole> {
     widgets: BTreeMap<WidgetId, Widget>,
     drawer: D,
     timer: T,
     http: H,
+    console: C,
 }
 
-impl<D: GlobalDrawer, T: GlobalTime, H: GlobalHttpClient> WidgetManager<D, T, H> {
-    pub fn new(drawer: D, timer: T, http: H) -> Self {
+impl<D: GlobalDrawer, T: GlobalTime, H: GlobalHttpClient, C: GlobalConsole> WidgetManager<D, T, H, C> {
+    pub fn new(drawer: D, timer: T, http: H, console: C) -> Self {
         Self {
             widgets: BTreeMap::new(),
             drawer,
             timer,
             http,
+            console,
         }
     }
 
@@ -28,6 +31,7 @@ impl<D: GlobalDrawer, T: GlobalTime, H: GlobalHttpClient> WidgetManager<D, T, H>
             drawer: self.drawer.scoped(widget.placement),
             time: self.timer.scoped(id),
             http: self.http.scoped(id),
+            console: self.console.scoped(id),
         });
 
         self.widgets.insert(id, widget);
