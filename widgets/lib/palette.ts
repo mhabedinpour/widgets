@@ -29,8 +29,10 @@ export class Palette {
   static readonly ORANGE: Color = new Color(255, 130, 40);
   /** Green — public IP text and globe land (shared on purpose). */
   static readonly GREEN: Color = new Color(50, 210, 90);
-  /** Alert red — offline slash + OFFLINE text. */
+  /** Alert red — offline slash + OFFLINE text, and stale clock. */
   static readonly RED: Color = new Color(255, 60, 50);
+  /** Dim red — stale clock colon and seconds. */
+  static readonly RED_DIM: Color = new Color(160, 40, 35);
 
   // ── Weather icon colors ────────────────────────────────────────
   static readonly SUN: Color = new Color(255, 200, 20);

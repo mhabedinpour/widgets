@@ -29,6 +29,10 @@ pub trait Time {
     fn delete_timeout(&mut self, data: DeleteTimeoutData);
     /// @wasm builder_name="getUnixTimestamp"
     fn get_unix_timestamp(&mut self) -> i64;
+    /// Returns the Unix timestamp (seconds) at which the last NTP sync completed,
+    /// or `-1` if the time has never been synced.
+    /// @wasm builder_name="getLastSync"
+    fn get_last_sync(&mut self) -> i64;
 }
 
 pub trait GlobalTime {

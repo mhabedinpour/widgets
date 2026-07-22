@@ -19,13 +19,26 @@ let UTC_OFFSET_STD: i64 = 3600;  // standard offset in seconds (default: CET = U
 let UTC_OFFSET_DST: i64 = 7200;  // DST offset in seconds    (default: CEST = UTC+2)
 let DST_START_MONTH: i32 = 3;    // month DST begins (default: March)
 let DST_END_MONTH: i32 = 10;     // month DST ends   (default: October)
+// How old the last NTP sync can be before the clock is considered stale.
+// Default: 2 hours. Set to 0 to disable the check.
+let STALE_THRESHOLD_SECS: i64 = 7200;
 
 function loadConfig(): void {
   const cfg = new Config();
-  UTC_OFFSET_STD  = <i64>parseInt(cfg.getOr("time_utc_offset",      "3600"));
-  UTC_OFFSET_DST  = <i64>parseInt(cfg.getOr("time_utc_dst_offset",  "7200"));
-  DST_START_MONTH = <i32>parseInt(cfg.getOr("time_dst_start_month", "3"));
-  DST_END_MONTH   = <i32>parseInt(cfg.getOr("time_dst_end_month",   "10"));
+  UTC_OFFSET_STD        = <i64>parseInt(cfg.getOr("time_utc_offset",      "3600"));
+  UTC_OFFSET_DST        = <i64>parseInt(cfg.getOr("time_utc_dst_offset",  "7200"));
+  DST_START_MONTH       = <i32>parseInt(cfg.getOr("time_dst_start_month", "3"));
+  DST_END_MONTH         = <i32>parseInt(cfg.getOr("time_dst_end_month",   "10"));
+  STALE_THRESHOLD_SECS  = <i64>parseInt(cfg.getOr("time_stale_secs",      "7200"));
+}
+
+// Returns true when the last NTP sync is older than STALE_THRESHOLD_SECS,
+// or when the time has never been synced.
+function isTimeSynced(nowTs: i64): bool {
+  if (STALE_THRESHOLD_SECS <= 0) return true; // check disabled
+  const lastSync = time.getLastSync().execute(); // -1 if never synced
+  if (lastSync < 0) return false;
+  return (nowTs - lastSync) <= STALE_THRESHOLD_SECS;
 }
 
 // ─── Date / time helpers ──────────────────────────────────────────────────────
@@ -121,26 +134,36 @@ export class TimeApp extends SubWidget {
 
   draw(): void {
     const ts = time.getUnixTimestamp().execute();
+    const synced = isTimeSynced(ts);
     drawer.clear().execute();
 
-    // Date — "TUE 21/07", amber, centred
+    // Date — "TUE 21/07"; amber when synced, red when stale
     drawer.text(formatDate(ts), new Point(32, 1))
-      .color(Palette.AMBER)
+      .color(synced ? Palette.AMBER : Palette.RED)
       .font(Font.Font5x7).alignment(TextAlignment.Center).baseline(Baseline.Top).execute();
 
-    // Big HH:MM clock — cyan, bold, centred
+    // Big HH:MM clock — cyan when synced, red when stale
+    const clockColor = synced ? Palette.CYAN : Palette.RED;
+    const clockDim   = synced ? Palette.CYAN_DIM : Palette.RED_DIM;
     drawer.text(formatTime(ts), new Point(32, 10))
-      .color(Palette.CYAN)
+      .color(clockColor)
       .font(Font.Font9x18Bold).alignment(TextAlignment.Center).baseline(Baseline.Top).execute();
 
-    // Colon overlaid on the middle cell — pulses bright/dim once per second
+    // Colon pulses bright/dim; both shades follow the sync-state color
     drawer.text(":", new Point(32, 10))
-      .color(colonVisible ? Palette.CYAN : Palette.CYAN_DIM)
+      .color(colonVisible ? clockColor : clockDim)
       .font(Font.Font9x18Bold).alignment(TextAlignment.Center).baseline(Baseline.Top).execute();
 
-    // Seconds — small, dim cyan, bottom-aligned with the clock
+    // Seconds — dim variant of the sync-state color
     drawer.text(formatSeconds(ts), new Point(63, 22))
-      .color(Palette.CYAN_DIM)
+      .color(clockDim)
       .font(Font.Font4x6).alignment(TextAlignment.Right).baseline(Baseline.Top).execute();
+
+    // Stale indicator — small "!" in the bottom-left corner
+    if (!synced) {
+      drawer.text("!", new Point(0, 22))
+        .color(Palette.RED)
+        .font(Font.Font4x6).alignment(TextAlignment.Left).baseline(Baseline.Top).execute();
+    }
   }
 }

@@ -10,13 +10,43 @@ const SNTP_TIME_OFFSET: u32 = 2_208_988_800;
 const SNTP_PACKET_SIZE: usize = 48;
 
 static TIME_OFFSET: Mutex<Cell<i64>> = Mutex::new(Cell::new(0));
+/// Monotonic ticks at the moment of the last successful sync.
+/// `u64::MAX` is the sentinel for "never synced".
+static LAST_SYNC_TICKS: Mutex<Cell<u64>> = Mutex::new(Cell::new(u64::MAX));
+/// Unix timestamp (seconds) recorded at the last successful sync.
+/// `0` before the first sync.
+static LAST_SYNC_UNIX: Mutex<Cell<i64>> = Mutex::new(Cell::new(0));
 
 fn update_time(unix_time: i64) {
-    let now_secs = Instant::now().as_secs() as i64;
-    let offset = unix_time - now_secs;
+    let now = Instant::now();
+    let offset = unix_time - now.as_secs() as i64;
     critical_section::with(|cs| {
         TIME_OFFSET.borrow(cs).set(offset);
+        LAST_SYNC_TICKS.borrow(cs).set(now.as_ticks());
+        LAST_SYNC_UNIX.borrow(cs).set(unix_time);
     });
+}
+
+/// The monotonic [`Instant`] at which the last NTP sync completed.
+/// Returns `None` if no sync has occurred yet.
+pub fn get_last_sync_instant() -> Option<Instant> {
+    critical_section::with(|cs| {
+        let ticks = LAST_SYNC_TICKS.borrow(cs).get();
+        if ticks == u64::MAX {
+            None
+        } else {
+            Some(Instant::from_ticks(ticks))
+        }
+    })
+}
+
+/// The Unix timestamp (seconds) recorded at the last NTP sync.
+/// Returns `None` if no sync has occurred yet.
+pub fn get_last_sync_unix() -> Option<i64> {
+    critical_section::with(|cs| {
+        let unix = LAST_SYNC_UNIX.borrow(cs).get();
+        if unix == 0 { None } else { Some(unix) }
+    })
 }
 
 /// Retrieve the latest synced Unix timestamp computed against the monotonic clock.
