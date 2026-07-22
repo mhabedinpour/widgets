@@ -30,5 +30,5 @@ config.json
 
 widgets/node_modules
 widgets/*.wasm
-widgets/lib/*
-!widgets/lib/config.ts
+# Generated TS bindings (rebuilt by build/codegen on every cargo build)
+widgets/lib/bindings/
