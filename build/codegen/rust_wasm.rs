@@ -8,7 +8,9 @@ pub fn generate(service: &ServiceDef, out_dir: &Path) {
     let module_struct = format!("{}Module", capitalize(&service.name));
     let out_path = out_dir.join(format!("{}_wasm_bindings.rs", service.name));
 
-    let bindings: String = service.bindings.iter()
+    let bindings: String = service
+        .bindings
+        .iter()
         .map(|b| render_binding(b, &service.name))
         .collect::<Vec<_>>()
         .join("");
@@ -31,8 +33,8 @@ impl HostModule for %module% {
 }
 "#,
         &[
-            ("name",     &service.name),
-            ("module",   &module_struct),
+            ("name", &service.name),
+            ("module", &module_struct),
             ("bindings", &bindings),
         ],
     );
@@ -88,13 +90,13 @@ fn render_binding(binding: &BindingDef, service_name: &str) -> String {
             ),
         )?;"#,
         &[
-            ("func",              &binding.executor_method),
-            ("sep",               sep),
-            ("params",            &params),
-            ("ret_sig",           &ret_sig),
-            ("preamble",          &preamble),
+            ("func", &binding.executor_method),
+            ("sep", sep),
+            ("params", &params),
+            ("ret_sig", &ret_sig),
+            ("preamble", &preamble),
             ("data_construction", &data_construction),
-            ("call_stmt",         &call_stmt),
+            ("call_stmt", &call_stmt),
         ],
     )
 }
@@ -103,20 +105,37 @@ fn render_data_construction(binding: &BindingDef, service_name: &str) -> String 
     if binding.fields.is_empty() {
         return String::new();
     }
-    let field_lines: String = binding.fields.iter()
-        .map(|f| format!("                        {}: {},\n", f.name, f.expansion.abi_to_rust.exprs[0]))
+    let field_lines: String = binding
+        .fields
+        .iter()
+        .map(|f| {
+            format!(
+                "                        {}: {},\n",
+                f.name, f.expansion.abi_to_rust.exprs[0]
+            )
+        })
         .collect();
     render(
         "                    let data = crate::%svc%::%dtype% {\n%fields%                    };\n",
-        &[("svc", service_name), ("dtype", binding.data_type.as_deref().unwrap()), ("fields", &field_lines)],
+        &[
+            ("svc", service_name),
+            ("dtype", binding.data_type.as_deref().unwrap()),
+            ("fields", &field_lines),
+        ],
     )
 }
 
 fn render_call_stmt(binding: &BindingDef, service_name: &str) -> String {
     let call = if binding.fields.is_empty() {
-        format!("caller.data_mut().ctx.as_mut().unwrap().{service_name}.{}()", binding.executor_method)
+        format!(
+            "caller.data_mut().ctx.as_mut().unwrap().{service_name}.{}()",
+            binding.executor_method
+        )
     } else {
-        format!("caller.data_mut().ctx.as_mut().unwrap().{service_name}.{}(data)", binding.executor_method)
+        format!(
+            "caller.data_mut().ctx.as_mut().unwrap().{service_name}.{}(data)",
+            binding.executor_method
+        )
     };
     // Service calls run on the SRAM heap; everything else in the binding
     // (field decoding, the guest itself) stays on the PSRAM heap.

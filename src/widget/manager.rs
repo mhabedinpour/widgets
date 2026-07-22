@@ -8,7 +8,13 @@ use crate::widget::{Widget, WidgetConfig, WidgetEvent, WidgetId};
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-pub struct WidgetManager<D: GlobalDrawer, T: GlobalTime, H: GlobalHttpClient, C: GlobalConsole, N: GlobalNetwork> {
+pub struct WidgetManager<
+    D: GlobalDrawer,
+    T: GlobalTime,
+    H: GlobalHttpClient,
+    C: GlobalConsole,
+    N: GlobalNetwork,
+> {
     widgets: BTreeMap<WidgetId, Widget>,
     drawer: D,
     timer: T,
@@ -17,7 +23,9 @@ pub struct WidgetManager<D: GlobalDrawer, T: GlobalTime, H: GlobalHttpClient, C:
     network: N,
 }
 
-impl<D: GlobalDrawer, T: GlobalTime, H: GlobalHttpClient, C: GlobalConsole, N: GlobalNetwork> WidgetManager<D, T, H, C, N> {
+impl<D: GlobalDrawer, T: GlobalTime, H: GlobalHttpClient, C: GlobalConsole, N: GlobalNetwork>
+    WidgetManager<D, T, H, C, N>
+{
     pub fn new(drawer: D, timer: T, http: H, console: C, network: N) -> Self {
         Self {
             widgets: BTreeMap::new(),

@@ -97,7 +97,8 @@ impl<'d> SntpClient<'d> {
         }
 
         let mut response = [0u8; SNTP_PACKET_SIZE];
-        let recv_result = with_timeout(Duration::from_secs(5), self.socket.recv_from(&mut response)).await;
+        let recv_result =
+            with_timeout(Duration::from_secs(5), self.socket.recv_from(&mut response)).await;
         match recv_result {
             Err(_) => Err("SNTP request timed out"),
             Ok(Err(_)) => Err("Failed to receive SNTP response packet"),

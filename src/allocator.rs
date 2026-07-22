@@ -1,7 +1,7 @@
 use core::alloc::{GlobalAlloc, Layout};
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use esp_alloc::{MemoryCapability, HEAP};
+use esp_alloc::{HEAP, MemoryCapability};
 
 static USE_PSRAM: AtomicBool = AtomicBool::new(false);
 

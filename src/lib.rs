@@ -8,8 +8,8 @@ pub mod console;
 pub mod drawer;
 pub mod http;
 pub mod network;
-pub mod time_sync;
 pub mod time;
+pub mod time_sync;
 pub mod widget;
 
 pub use allocator::{set_psram_alloc, use_psram_heap, use_sram_heap};

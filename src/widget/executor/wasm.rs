@@ -1,10 +1,13 @@
+use crate::console::LogData;
+use crate::drawer::{Baseline, ClearData, Color, Font, Point, TextAlignment, TextData};
 use crate::widget::WidgetEvent;
 use crate::widget::executor::{Context, Executor};
+use crate::{use_psram_heap, use_sram_heap};
+use alloc::string::String;
 use alloc::vec::Vec;
 use wasmi::{
     Caller, Config, Engine, Linker, Module, Store, StoreLimits, StoreLimitsBuilder, TypedFunc,
 };
-use crate::{use_psram_heap, use_sram_heap};
 
 const MAX_WASM_MEMORY_BYTES: usize = 100 * 1024;
 
@@ -64,7 +67,9 @@ include!(concat!(env!("OUT_DIR"), "/network_wasm_bindings.rs"));
 struct ConfigModule;
 
 impl HostModule for ConfigModule {
-    fn name(&self) -> &str { "config" }
+    fn name(&self) -> &str {
+        "config"
+    }
 
     fn register(
         &self,
@@ -89,7 +94,7 @@ impl HostModule for ConfigModule {
 
                     // Read the key into an owned String so we can release the
                     // immutable borrow before writing back to memory.
-                    let key: alloc::string::String = {
+                    let key: String = {
                         let start = key_ptr as usize;
                         let end = start
                             .checked_add(key_len as usize)
@@ -100,12 +105,11 @@ impl HostModule for ConfigModule {
                             .ok_or_else(|| wasmi::Error::new("out-of-bounds key pointer"))?;
                         let s = core::str::from_utf8(bytes)
                             .map_err(|_| wasmi::Error::new("key is not valid UTF-8"))?;
-                        alloc::string::String::from(s)
+                        String::from(s)
                     };
 
                     // Look up the value and copy bytes; releases the data borrow.
-                    let value_bytes: Option<alloc::vec::Vec<u8>> = {
-                        crate::use_sram_heap();
+                    let value_bytes: Option<Vec<u8>> = {
                         let result = caller
                             .data()
                             .ctx
@@ -114,7 +118,6 @@ impl HostModule for ConfigModule {
                             .config
                             .get(key.as_str())
                             .map(|v| v.as_bytes().to_vec());
-                        crate::use_psram_heap();
                         result
                     };
 
@@ -171,13 +174,28 @@ impl HostModule for EnvModule {
 }
 
 pub struct WasmExecutor {
-    render_func: TypedFunc<(), ()>,
+    render_func: Option<TypedFunc<(), ()>>,
     store: Store<WasmCtx>,
+    failed: bool,
+    init_error: Option<String>,
 }
 
 impl WasmExecutor {
-    pub fn new(wasm_binary: &[u8]) -> Result<Self, wasmi::Error> {
-        Self::with_modules(wasm_binary)
+    /// Instantiate the widget module. Never fails: on error the executor
+    /// logs the cause on first render and paints an error state instead.
+    pub fn new(wasm_binary: &[u8]) -> Self {
+        Self::with_modules(wasm_binary).unwrap_or_else(|err| {
+            use_sram_heap();
+
+            let engine = Engine::new(&Config::default());
+            let store = Store::new(&engine, WasmCtx::new());
+            Self {
+                render_func: None,
+                store,
+                failed: true,
+                init_error: Some(alloc::format!("widget init failed: {}", err)),
+            }
+        })
     }
 
     fn with_modules(wasm_binary: &[u8]) -> Result<Self, wasmi::Error> {
@@ -211,7 +229,47 @@ impl WasmExecutor {
 
         use_sram_heap();
 
-        Ok(Self { render_func, store })
+        Ok(Self {
+            render_func: Some(render_func),
+            store,
+            failed: false,
+            init_error: None,
+        })
+    }
+
+    /// Paint an error indicator across the widget's bounds.
+    fn draw_error(&mut self) {
+        if let Some(ctx) = self.store.data_mut().ctx.as_mut() {
+            let drawer = &mut ctx.drawer;
+            let w = drawer.bounds_width();
+            let h = drawer.bounds_height();
+
+            drawer.execute_clear(ClearData {
+                color: Color::BLACK,
+            });
+
+            // Pick a font that fits the band height.
+            let font = if h >= 14 {
+                Font::Font5x8
+            } else {
+                Font::U8g2Font3x5
+            };
+
+            drawer.execute_text(TextData {
+                text: String::from("ERROR"),
+                position: Point::new(w / 2, h / 2),
+                color: Color::Rgb(255, 60, 50),
+                background_color: Color::BLACK,
+                has_background: false,
+                font,
+                underline: false,
+                strikethrough: false,
+                alignment: TextAlignment::Center,
+                baseline: Baseline::Middle,
+            });
+        }
+
+        use_sram_heap();
     }
 }
 
@@ -221,9 +279,43 @@ impl Executor for WasmExecutor {
     }
 
     fn render(&mut self, events: Option<Vec<WidgetEvent>>) {
+        use_psram_heap();
+
+        if let Some(message) = self.init_error.take() {
+            if let Some(ctx) = self.store.data_mut().ctx.as_mut() {
+                ctx.console.log_error(LogData { message });
+            }
+        }
+
+        if self.failed {
+            // Init failed or the instance already trapped; keep showing the
+            // error instead of calling into a missing/corrupt module.
+            self.draw_error();
+            return;
+        }
+
         let data = self.store.data_mut();
         data.event_queue = events.unwrap_or_default();
         data.event_cursor = None;
-        self.render_func.call(&mut self.store, ()).unwrap();
+
+        let render_func = match self.render_func {
+            Some(f) => f,
+            None => {
+                self.failed = true;
+                self.draw_error();
+                return;
+            }
+        };
+
+        if let Err(err) = render_func.call(&mut self.store, ()) {
+            self.failed = true;
+            let message = alloc::format!("widget render failed: {}", err);
+            if let Some(ctx) = self.store.data_mut().ctx.as_mut() {
+                ctx.console.log_error(LogData { message });
+            }
+            self.draw_error();
+        }
+
+        use_sram_heap();
     }
 }

@@ -2,8 +2,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use syn::{Attribute, Fields, FnArg, Item, TraitItem, Type};
 
-use crate::codegen::model::{BindingDef, EventFieldDef, EventVariantDef, EventsDef, FieldDef, ServiceDef};
-use crate::codegen::type_map::{expand, expand_return, Expansion};
+use crate::codegen::model::{
+    BindingDef, EventFieldDef, EventVariantDef, EventsDef, FieldDef, ServiceDef,
+};
+use crate::codegen::type_map::{Expansion, expand, expand_return};
 
 /// Recursively scan `src_root` for Rust traits annotated with `@wasm` and
 /// return a `ServiceDef` for each one found.
@@ -74,7 +76,8 @@ fn try_parse_service_from_file(path: &Path) -> Option<ServiceDef> {
                         parse_kv(&method_wasm_line, "builder_name").unwrap_or_else(|| {
                             panic!("@wasm on `{executor_method}` missing builder_name=")
                         });
-                    let return_expansion = infer_return_expansion(&method.sig.output, &executor_method);
+                    let return_expansion =
+                        infer_return_expansion(&method.sig.output, &executor_method);
                     let data_type = extract_data_param_type(&method.sig);
 
                     let fields = match &data_type {
@@ -122,7 +125,10 @@ fn collect_structs(src_dir: &Path) -> HashMap<String, syn::ItemStruct> {
 }
 
 /// Look up `struct_name` in the pre-parsed struct index and return its field definitions.
-fn find_struct_fields(structs: &HashMap<String, syn::ItemStruct>, struct_name: &str) -> Vec<FieldDef> {
+fn find_struct_fields(
+    structs: &HashMap<String, syn::ItemStruct>,
+    struct_name: &str,
+) -> Vec<FieldDef> {
     let s = structs
         .get(struct_name)
         .unwrap_or_else(|| panic!("No struct `{struct_name}` found in scanned files"));
@@ -150,8 +156,18 @@ fn find_struct_fields(structs: &HashMap<String, syn::ItemStruct>, struct_name: &
         let setter_name = find_directive(&field_doc, "@setter")
             .map(|line| extract_after_directive(&line, "@setter"));
         let required = required_set.contains(&field_name.as_str());
-        let expansion = expand(&field_name, &type_name, struct_name, required, default.as_deref());
-        fields.push(FieldDef { name: field_name, expansion, setter_name });
+        let expansion = expand(
+            &field_name,
+            &type_name,
+            struct_name,
+            required,
+            default.as_deref(),
+        );
+        fields.push(FieldDef {
+            name: field_name,
+            expansion,
+            setter_name,
+        });
     }
     fields
 }
@@ -321,7 +337,10 @@ pub fn scan_events(widget_mod_path: &Path) -> EventsDef {
                         let field_name = f.ident.as_ref().unwrap().to_string();
                         let type_name = type_name_from_syn(&f.ty, &context, &field_name);
                         let expansion = expand(&field_name, &type_name, &context, true, None);
-                        EventFieldDef { name: field_name, expansion }
+                        EventFieldDef {
+                            name: field_name,
+                            expansion,
+                        }
                     })
                     .collect();
 

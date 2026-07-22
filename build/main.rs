@@ -19,20 +19,20 @@ fn main() {
 
     println!("cargo:rerun-if-changed=src");
 
-    let lib_dir = Path::new("widgets/lib");
-    fs::create_dir_all(lib_dir).unwrap();
+    let bindings_dir = Path::new("widgets/lib/bindings");
+    fs::create_dir_all(bindings_dir).unwrap();
 
-    codegen::typescript::generate_base_types(lib_dir);
+    codegen::typescript::generate_base_types(bindings_dir);
 
     for service in &services {
         codegen::rust_wasm::generate(service, out_path);
 
-        let ts_out = format!("widgets/lib/{}.ts", service.name);
+        let ts_out = format!("widgets/lib/bindings/{}.ts", service.name);
         codegen::typescript::generate(service, Path::new(&ts_out));
     }
 
     codegen::events::generate_rust(&events, out_path);
-    codegen::events::generate_ts(&events, Path::new("widgets/lib/events.ts"));
+    codegen::events::generate_ts(&events, Path::new("widgets/lib/bindings/events.ts"));
 
     // Generated TS files now live in widgets/lib/, which is not scanned for widget
     // compilation, so no skip list is needed.
@@ -147,9 +147,8 @@ fn generate_config(out_path: &Path) {
     // Hub75 pin macro — expands to a Hub75Pins16 { ... } expression.
     // Types are resolved at the call site (all needed imports are in main.rs).
     let pin_fields = [
-        "red1", "grn1", "blu1", "red2", "grn2", "blu2",
-        "addr0", "addr1", "addr2", "addr3", "addr4",
-        "blank", "clock", "latch",
+        "red1", "grn1", "blu1", "red2", "grn2", "blu2", "addr0", "addr1", "addr2", "addr3",
+        "addr4", "blank", "clock", "latch",
     ];
     out.push_str("macro_rules! hub75_pins {\n");
     out.push_str("    ($p:ident) => {\n");
@@ -158,7 +157,10 @@ fn generate_config(out_path: &Path) {
         let num = cfg["display"]["pins"][field]
             .as_u64()
             .unwrap_or_else(|| panic!("config.json: display.pins.{} is missing", field));
-        out.push_str(&format!("            {}: $p.GPIO{}.degrade(),\n", field, num));
+        out.push_str(&format!(
+            "            {}: $p.GPIO{}.degrade(),\n",
+            field, num
+        ));
     }
     out.push_str("        }\n");
     out.push_str("    };\n");
@@ -174,13 +176,13 @@ fn generate_config(out_path: &Path) {
     out.push_str("        {\n");
 
     for widget in widgets {
-        let id    = widget["id"].as_u64().expect("widget missing id");
+        let id = widget["id"].as_u64().expect("widget missing id");
         let wtype = widget["type"].as_str().expect("widget missing type");
-        let x     = widget["x"].as_u64().unwrap_or(0);
-        let y     = widget["y"].as_u64().unwrap_or(0);
-        let w     = widget["width"].as_u64().expect("widget missing width");
-        let h     = widget["height"].as_u64().expect("widget missing height");
-        let wasm  = wtype.to_uppercase(); // "time" -> "TIME"
+        let x = widget["x"].as_u64().unwrap_or(0);
+        let y = widget["y"].as_u64().unwrap_or(0);
+        let w = widget["width"].as_u64().expect("widget missing width");
+        let h = widget["height"].as_u64().expect("widget missing height");
+        let wasm = wtype.to_uppercase(); // "time" -> "TIME"
 
         let cfg_entries: Vec<(String, String)> = widget["config"]
             .as_object()
@@ -198,18 +200,23 @@ fn generate_config(out_path: &Path) {
                  \x20               WidgetId::new({id}),\n\
                  \x20               Widget {{\n\
                  \x20                   placement: Rect::new(Point::new({x}, {y}), Size::new({w}, {h})),\n\
-                 \x20                   executor: Box::new(WasmExecutor::new(compiled_widgets::{wasm}).unwrap()),\n\
+                 \x20                   executor: Box::new(WasmExecutor::new(compiled_widgets::{wasm})),\n\
                  \x20               }},\n\
                  \x20               WidgetConfig::new(),\n\
                  \x20           );\n",
                 id = id, x = x, y = y, w = w, h = h, wasm = wasm,
             ));
         } else {
-            out.push_str(&format!("            let mut {} = WidgetConfig::new();\n", cfg_var));
+            out.push_str(&format!(
+                "            let mut {} = WidgetConfig::new();\n",
+                cfg_var
+            ));
             for (k, v) in &cfg_entries {
                 out.push_str(&format!(
                     "            {var}.insert({k:?}.into(), {v:?}.into());\n",
-                    var = cfg_var, k = k, v = v,
+                    var = cfg_var,
+                    k = k,
+                    v = v,
                 ));
             }
             out.push_str(&format!(
@@ -217,7 +224,7 @@ fn generate_config(out_path: &Path) {
                  \x20               WidgetId::new({id}),\n\
                  \x20               Widget {{\n\
                  \x20                   placement: Rect::new(Point::new({x}, {y}), Size::new({w}, {h})),\n\
-                 \x20                   executor: Box::new(WasmExecutor::new(compiled_widgets::{wasm}).unwrap()),\n\
+                 \x20                   executor: Box::new(WasmExecutor::new(compiled_widgets::{wasm})),\n\
                  \x20               }},\n\
                  \x20               {var},\n\
                  \x20           );\n",

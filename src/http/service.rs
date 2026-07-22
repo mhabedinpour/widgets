@@ -3,6 +3,7 @@ use crate::http::{
     parse_url,
 };
 use crate::widget::WidgetId;
+use crate::{use_psram_heap, use_sram_heap};
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -100,7 +101,11 @@ impl HttpService {
     pub fn new(spawner: Spawner, stack: Stack<'static>) -> Self {
         let completed: &'static CompletedQueue =
             Box::leak(Box::new(Mutex::new(RefCell::new(Vec::new()))));
-        Self { spawner, stack, completed }
+        Self {
+            spawner,
+            stack,
+            completed,
+        }
     }
 }
 
@@ -112,13 +117,11 @@ impl GlobalHttpClient for HttpService {
     fn scoped(&self, widget_id: WidgetId) -> Box<dyn Http> {
         let channel: &'static HttpChannel = Box::leak(Box::new(Channel::new()));
         self.spawner
-            .spawn(widget_http_task(
-                self.stack,
-                widget_id,
-                channel,
-                self.completed,
-            ).unwrap());
-        Box::new(WidgetHttpClient { channel, next_id: 0 })
+            .spawn(widget_http_task(self.stack, widget_id, channel, self.completed).unwrap());
+        Box::new(WidgetHttpClient {
+            channel,
+            next_id: 0,
+        })
     }
 }
 
@@ -193,9 +196,7 @@ async fn write_http_request<S: Write>(
 ///
 /// Returns parsed response headers as `(name, value)` pairs — the HTTP
 /// status line is excluded — plus the raw body string.
-async fn read_http_response<S: Read>(
-    stream: &mut S,
-) -> (Vec<(String, String)>, String) {
+async fn read_http_response<S: Read>(stream: &mut S) -> (Vec<(String, String)>, String) {
     let mut raw: Vec<u8> = Vec::new();
     let mut chunk = [0u8; READ_CHUNK];
     loop {
@@ -217,7 +218,7 @@ async fn read_http_response<S: Read>(
     let mut headers: Vec<(String, String)> = Vec::new();
     for line in header_section.lines().skip(1) {
         if let Some(colon) = line.find(':') {
-            let name  = line[..colon].trim().to_string();
+            let name = line[..colon].trim().to_string();
             let value = line[colon + 1..].trim().to_string();
             headers.push((name, value));
         }
@@ -275,9 +276,10 @@ async fn execute_https_request<'b>(
         .await
         .map_err(|_| HttpError::ConnectFailed)?;
 
-    let config = TlsConfig::new().with_server_name(parsed.host).enable_rsa_signatures();
-    let mut tls: TlsConnection<'_, _, Aes256GcmSha384> =
-        TlsConnection::new(socket, tls_rx, tls_tx);
+    let config = TlsConfig::new()
+        .with_server_name(parsed.host)
+        .enable_rsa_signatures();
+    let mut tls: TlsConnection<'_, _, Aes256GcmSha384> = TlsConnection::new(socket, tls_rx, tls_tx);
 
     let rng = EspCryptoRng(Rng::new());
     tls.open(TlsContext::new(
@@ -332,10 +334,12 @@ async fn widget_http_task(
 ) {
     // All buffers are heap-allocated once per widget task and reused for
     // every subsequent request — no per-request allocation overhead.
+    use_psram_heap();
     let tcp_rx: &'static mut [u8] = Box::leak(Box::new([0u8; TCP_BUF_SIZE]));
     let tcp_tx: &'static mut [u8] = Box::leak(Box::new([0u8; TCP_BUF_SIZE]));
     let tls_rx: &'static mut [u8] = Box::leak(Box::new([0u8; TLS_RX_BUF_SIZE]));
     let tls_tx: &'static mut [u8] = Box::leak(Box::new([0u8; TLS_TX_BUF_SIZE]));
+    use_sram_heap();
 
     stack.wait_config_up().await;
 
@@ -346,10 +350,7 @@ async fn widget_http_task(
             match execute_request(stack, tcp_rx, tcp_tx, tls_rx, tls_tx, &req).await {
                 Ok((h, b)) => (Some(h), Some(b), None),
                 Err(e) => {
-                    log::error!(
-                        "HTTP[S] request {} to {} failed: {}",
-                        id.0, req.url, e
-                    );
+                    log::error!("HTTP[S] request {} to {} failed: {}", id.0, req.url, e);
                     (None, None, Some(e))
                 }
             };
@@ -357,7 +358,12 @@ async fn widget_http_task(
         critical_section::with(|cs| {
             completed.borrow(cs).borrow_mut().push((
                 widget_id,
-                HttpResponse { request_id: id, headers, body, error },
+                HttpResponse {
+                    request_id: id,
+                    headers,
+                    body,
+                    error,
+                },
             ));
         });
     }

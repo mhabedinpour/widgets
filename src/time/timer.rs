@@ -30,16 +30,31 @@ impl TimeService {
         }
     }
 
-    pub fn schedule(&self, widget_id: WidgetId, timer_id: TimerId, duration: Duration, recurring: Option<Duration>) {
+    pub fn schedule(
+        &self,
+        widget_id: WidgetId,
+        timer_id: TimerId,
+        duration: Duration,
+        recurring: Option<Duration>,
+    ) {
         let expiration = Instant::now() + duration;
         self.timers.borrow_mut().insert(
-            TimerKey { widget_id, timer_id },
-            TimerEntry { expiration, recurring },
+            TimerKey {
+                widget_id,
+                timer_id,
+            },
+            TimerEntry {
+                expiration,
+                recurring,
+            },
         );
     }
 
     pub fn cancel(&self, widget_id: WidgetId, timer_id: TimerId) {
-        self.timers.borrow_mut().remove(&TimerKey { widget_id, timer_id });
+        self.timers.borrow_mut().remove(&TimerKey {
+            widget_id,
+            timer_id,
+        });
     }
 }
 
@@ -102,10 +117,20 @@ impl Time for WidgetTime {
     fn create_timeout(&mut self, data: CreateTimeoutData) -> TimerId {
         let id = TimerId(self.next_id);
         self.next_id += 1;
-        let recurring = if data.recurring { Some(data.duration) } else { None };
+        let recurring = if data.recurring {
+            Some(data.duration)
+        } else {
+            None
+        };
         self.timers.borrow_mut().insert(
-            TimerKey { widget_id: self.widget_id, timer_id: id },
-            TimerEntry { expiration: Instant::now() + data.duration, recurring },
+            TimerKey {
+                widget_id: self.widget_id,
+                timer_id: id,
+            },
+            TimerEntry {
+                expiration: Instant::now() + data.duration,
+                recurring,
+            },
         );
         id
     }

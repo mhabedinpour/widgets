@@ -120,20 +120,31 @@ pub fn expand(
                 abi(format!("{name}_g"), "u32"),
                 abi(format!("{name}_b"), "u32"),
             ],
-            rust_to_abi: conv(String::new(), vec![
-                "match %v% { crate::drawer::types::Color::Rgb(r, _, _) => r as u32, _ => 0 }".to_string(),
-                "match %v% { crate::drawer::types::Color::Rgb(_, g, _) => g as u32, _ => 0 }".to_string(),
-                "match %v% { crate::drawer::types::Color::Rgb(_, _, b) => b as u32, _ => 0 }".to_string(),
-            ]),
+            rust_to_abi: conv(
+                String::new(),
+                vec![
+                    "match %v% { crate::drawer::types::Color::Rgb(r, _, _) => r as u32, _ => 0 }"
+                        .to_string(),
+                    "match %v% { crate::drawer::types::Color::Rgb(_, g, _) => g as u32, _ => 0 }"
+                        .to_string(),
+                    "match %v% { crate::drawer::types::Color::Rgb(_, _, b) => b as u32, _ => 0 }"
+                        .to_string(),
+                ],
+            ),
             abi_to_rust: expr(format!(
                 "crate::drawer::types::Color::Rgb({name}_r as u8, {name}_g as u8, {name}_b as u8)"
             )),
-            ts_to_abi: conv(String::new(), vec![
-                "%v%.r".to_string(),
-                "%v%.g".to_string(),
-                "%v%.b".to_string(),
-            ]),
-            abi_to_ts: expr(format!("new Color(<u8>{name}_r, <u8>{name}_g, <u8>{name}_b)")),
+            ts_to_abi: conv(
+                String::new(),
+                vec![
+                    "%v%.r".to_string(),
+                    "%v%.g".to_string(),
+                    "%v%.b".to_string(),
+                ],
+            ),
+            abi_to_ts: expr(format!(
+                "new Color(<u8>{name}_r, <u8>{name}_g, <u8>{name}_b)"
+            )),
         },
 
         "Point" => Expansion {
@@ -143,17 +154,17 @@ pub fn expand(
                 abi(format!("{name}_x"), "u32"),
                 abi(format!("{name}_y"), "u32"),
             ],
-            rust_to_abi: conv(String::new(), vec![
-                "(%v%).x".to_string(),
-                "(%v%).y".to_string(),
-            ]),
+            rust_to_abi: conv(
+                String::new(),
+                vec!["(%v%).x".to_string(), "(%v%).y".to_string()],
+            ),
             abi_to_rust: expr(format!(
                 "crate::drawer::types::Point {{ x: {name}_x, y: {name}_y }}"
             )),
-            ts_to_abi: conv(String::new(), vec![
-                "%v%.x".to_string(),
-                "%v%.y".to_string(),
-            ]),
+            ts_to_abi: conv(
+                String::new(),
+                vec!["%v%.x".to_string(), "%v%.y".to_string()],
+            ),
             abi_to_ts: expr(format!("new Point({name}_x, {name}_y)")),
         },
 
@@ -166,21 +177,27 @@ pub fn expand(
                 abi(format!("{name}_width"), "u32"),
                 abi(format!("{name}_height"), "u32"),
             ],
-            rust_to_abi: conv(String::new(), vec![
-                "(%v%).origin.x".to_string(),
-                "(%v%).origin.y".to_string(),
-                "(%v%).size.width".to_string(),
-                "(%v%).size.height".to_string(),
-            ]),
+            rust_to_abi: conv(
+                String::new(),
+                vec![
+                    "(%v%).origin.x".to_string(),
+                    "(%v%).origin.y".to_string(),
+                    "(%v%).size.width".to_string(),
+                    "(%v%).size.height".to_string(),
+                ],
+            ),
             abi_to_rust: expr(format!(
                 "crate::drawer::types::Rect {{ origin: crate::drawer::types::Point {{ x: {name}_x, y: {name}_y }}, size: crate::drawer::types::Size {{ width: {name}_width, height: {name}_height }} }}"
             )),
-            ts_to_abi: conv(String::new(), vec![
-                "%v%.x".to_string(),
-                "%v%.y".to_string(),
-                "%v%.width".to_string(),
-                "%v%.height".to_string(),
-            ]),
+            ts_to_abi: conv(
+                String::new(),
+                vec![
+                    "%v%.x".to_string(),
+                    "%v%.y".to_string(),
+                    "%v%.width".to_string(),
+                    "%v%.height".to_string(),
+                ],
+            ),
             abi_to_ts: expr(format!(
                 "new Rect({name}_x, {name}_y, {name}_width, {name}_height)"
             )),
@@ -193,21 +210,25 @@ pub fn expand(
                 abi(format!("{name}_len"), "u32"),
                 abi(format!("{name}_ptr"), "usize"),
             ],
-            rust_to_abi: conv(String::new(), vec![
-                "(%v%).len() as u32".to_string(),
-                "(%v%).as_bytes().to_vec()".to_string(),
-            ]),
+            rust_to_abi: conv(
+                String::new(),
+                vec![
+                    "(%v%).len() as u32".to_string(),
+                    "(%v%).as_bytes().to_vec()".to_string(),
+                ],
+            ),
             abi_to_rust: conv(
-                read_guest_bytes(name) + &render(
-                    r#"                    let %n%_utf8 = match core::str::from_utf8(%n%_bytes) {
+                read_guest_bytes(name)
+                    + &render(
+                        r#"                    let %n%_utf8 = match core::str::from_utf8(%n%_bytes) {
                         Ok(s) => s,
                         Err(_) => return Err(wasmi::Error::new("field `%n%` is not valid UTF-8")),
                     };
                     let mut %n%_buf = alloc::string::String::new();
                     %n%_buf.push_str(%n%_utf8);
 "#,
-                    &[("n", name)],
-                ),
+                        &[("n", name)],
+                    ),
                 vec![format!("{name}_buf")],
             ),
             ts_to_abi: conv(
@@ -258,7 +279,9 @@ pub fn expand(
             ta_default: Some("StrokeAlignment.Center".to_string()),
             abi: vec![abi(name.to_string(), "u32")],
             rust_to_abi: expr("%v% as u32".to_string()),
-            abi_to_rust: expr(format!("crate::drawer::types::StrokeAlignment::from_int({name})")),
+            abi_to_rust: expr(format!(
+                "crate::drawer::types::StrokeAlignment::from_int({name})"
+            )),
             ts_to_abi: expr("%v% as u32".to_string()),
             abi_to_ts: expr(format!("{name} as StrokeAlignment")),
         },
@@ -278,7 +301,9 @@ pub fn expand(
             ta_default: Some("TextAlignment.Left".to_string()),
             abi: vec![abi(name.to_string(), "u32")],
             rust_to_abi: expr("%v% as u32".to_string()),
-            abi_to_rust: expr(format!("crate::drawer::types::TextAlignment::from_int({name})")),
+            abi_to_rust: expr(format!(
+                "crate::drawer::types::TextAlignment::from_int({name})"
+            )),
             ts_to_abi: expr("%v% as u32".to_string()),
             abi_to_ts: expr(format!("{name} as TextAlignment")),
         },
@@ -297,9 +322,9 @@ pub fn expand(
             array_expansion(name, &t[4..t.len() - 1], context)
         }
 
-        unknown => panic!(
-            "Unknown type `{unknown}` on {context}::{name}. Add a match arm to type_map.rs."
-        ),
+        unknown => {
+            panic!("Unknown type `{unknown}` on {context}::{name}. Add a match arm to type_map.rs.")
+        }
     };
 
     // Uniform required/default handling: an `@default` annotation overrides
@@ -375,25 +400,33 @@ fn int_array_expansion(
             abi(format!("{name}_len"), "u32"),
             abi(format!("{name}_ptr"), "usize"),
         ],
-        rust_to_abi: conv(String::new(), vec![
-            format!("((%v%).len() * {size}) as u32"),
-            "(%v%).iter().flat_map(|__x| __x.to_le_bytes()).collect::<alloc::vec::Vec<u8>>()".to_string(),
-        ]),
+        rust_to_abi: conv(
+            String::new(),
+            vec![
+                format!("((%v%).len() * {size}) as u32"),
+                "(%v%).iter().flat_map(|__x| __x.to_le_bytes()).collect::<alloc::vec::Vec<u8>>()"
+                    .to_string(),
+            ],
+        ),
         abi_to_rust: conv(
-            read_guest_bytes(name) + &render(
-                r#"                    let %n%_vec: alloc::vec::Vec<%elem%> = %n%_bytes
+            read_guest_bytes(name)
+                + &render(
+                    r#"                    let %n%_vec: alloc::vec::Vec<%elem%> = %n%_bytes
                         .chunks_exact(%size%)
                         .map(|__c| %elem%::from_le_bytes(__c.try_into().unwrap()))
                         .collect();
 "#,
-                &[("n", name), ("elem", elem), ("size", &size.to_string())],
-            ),
+                    &[("n", name), ("elem", elem), ("size", &size.to_string())],
+                ),
             vec![format!("{name}_vec")],
         ),
-        ts_to_abi: conv(String::new(), vec![
-            format!("(%v%).length << {shift}"),
-            "(%v%).dataStart".to_string(),
-        ]),
+        ts_to_abi: conv(
+            String::new(),
+            vec![
+                format!("(%v%).length << {shift}"),
+                "(%v%).dataStart".to_string(),
+            ],
+        ),
         abi_to_ts: conv(
             render(
                 r#"    const %n%_arr = new Array<%ts_elem%>(<i32>(%n%_len >>> %shift%));
@@ -401,7 +434,11 @@ fn int_array_expansion(
       %n%_arr[%n%_i] = load<%ts_elem%>(%n%_ptr + (<usize>%n%_i << %shift%));
     }
 "#,
-                &[("n", name), ("ts_elem", ts_elem), ("shift", &shift.to_string())],
+                &[
+                    ("n", name),
+                    ("ts_elem", ts_elem),
+                    ("shift", &shift.to_string()),
+                ],
             ),
             vec![format!("{name}_arr")],
         ),

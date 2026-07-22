@@ -2,14 +2,10 @@ use crate::drawer::{
     ArcData, Baseline, CircleData, ClearData, Color, Drawer, EllipseData, Font, LineData, Rect,
     RectData, SectorData, StrokeAlignment, TextAlignment, TextData, TriangleData,
 };
-use u8g2_fonts::{
-    FontRenderer,
-    fonts,
-    types::{FontColor, HorizontalAlignment, VerticalPosition},
-};
 use alloc::rc::Rc;
 use core::cell::RefCell;
 use embedded_graphics::{
+    geometry::Angle,
     mono_font::{
         MonoFont, MonoTextStyleBuilder,
         ascii::{
@@ -19,11 +15,14 @@ use embedded_graphics::{
             FONT_9X15_BOLD, FONT_9X18, FONT_9X18_BOLD, FONT_10X20,
         },
     },
-    geometry::Angle,
     pixelcolor::Rgb888,
     prelude::*,
     primitives::*,
     text::{Alignment, Baseline as EgBaseline, Text, TextStyleBuilder},
+};
+use u8g2_fonts::{
+    FontRenderer, fonts,
+    types::{FontColor, HorizontalAlignment, VerticalPosition},
 };
 
 pub fn color_to_rgb888(color: Color) -> Rgb888 {
@@ -427,11 +426,21 @@ impl<T: DrawTarget<Color = Rgb888>> EmbeddedGraphicsDrawer<T> {
         }
 
         match data.font {
-            Font::U8g2Font3x3 => { render_u8g2!(fonts::u8g2_font_tiny_simon_tr); }
-            Font::U8g2Font3x5 => { render_u8g2!(fonts::u8g2_font_3x5im_mr); }
-            Font::U8g2Font4x6 => { render_u8g2!(fonts::u8g2_font_4x6_mf); }
-            Font::U8g2Font5x7 => { render_u8g2!(fonts::u8g2_font_5x7_mf); }
-            Font::U8g2Font5x8 => { render_u8g2!(fonts::u8g2_font_5x8_mf); }
+            Font::U8g2Font3x3 => {
+                render_u8g2!(fonts::u8g2_font_tiny_simon_tr);
+            }
+            Font::U8g2Font3x5 => {
+                render_u8g2!(fonts::u8g2_font_3x5im_mr);
+            }
+            Font::U8g2Font4x6 => {
+                render_u8g2!(fonts::u8g2_font_4x6_mf);
+            }
+            Font::U8g2Font5x7 => {
+                render_u8g2!(fonts::u8g2_font_5x7_mf);
+            }
+            Font::U8g2Font5x8 => {
+                render_u8g2!(fonts::u8g2_font_5x8_mf);
+            }
             _ => {}
         }
     }

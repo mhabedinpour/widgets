@@ -14,8 +14,15 @@ pub mod executor;
 pub mod manager;
 
 pub enum WidgetEvent {
-    TimerInterrupt { timer_id: TimerId },
-    HttpResponse { request_id: RequestId, headers: Vec<(String, String)>, body: String, success: bool },
+    TimerInterrupt {
+        timer_id: TimerId,
+    },
+    HttpResponse {
+        request_id: RequestId,
+        headers: Vec<(String, String)>,
+        body: String,
+        success: bool,
+    },
 }
 
 #[derive(Ord, Eq, PartialEq, PartialOrd, Clone, Copy, Debug)]

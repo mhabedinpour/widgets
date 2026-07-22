@@ -15,15 +15,21 @@ pub fn generate(service: &ServiceDef, out_path: &Path) {
     let wasm_module = &service.name;
     let factory_class = capitalize(wasm_module);
 
-    let wasm_decls: String = service.bindings.iter()
+    let wasm_decls: String = service
+        .bindings
+        .iter()
         .map(|b| render_wasm_decl(b, wasm_module))
         .collect();
 
-    let factory_methods: String = service.bindings.iter()
+    let factory_methods: String = service
+        .bindings
+        .iter()
         .map(|b| render_factory_method(b))
         .collect();
 
-    let builder_classes: String = service.bindings.iter()
+    let builder_classes: String = service
+        .bindings
+        .iter()
         .map(|b| render_builder_class(b, service))
         .collect();
 
@@ -39,9 +45,9 @@ export class %factory_class% {
 
 %builder_classes%"#,
         &[
-            ("wasm_module",     wasm_module),
-            ("factory_class",   &factory_class),
-            ("wasm_decls",      &wasm_decls),
+            ("wasm_module", wasm_module),
+            ("factory_class", &factory_class),
+            ("wasm_decls", &wasm_decls),
             ("factory_methods", &factory_methods),
             ("builder_classes", &builder_classes),
         ],
@@ -52,7 +58,9 @@ export class %factory_class% {
 }
 
 fn render_wasm_decl(binding: &crate::codegen::model::BindingDef, wasm_module: &str) -> String {
-    let params: Vec<String> = binding.fields.iter()
+    let params: Vec<String> = binding
+        .fields
+        .iter()
         .flat_map(|f| f.expansion.abi.iter())
         .map(|a| format!("{}: {}", a.name, a.ty))
         .collect();
@@ -63,34 +71,39 @@ fn render_wasm_decl(binding: &crate::codegen::model::BindingDef, wasm_module: &s
     render(
         "  @external(\"%mod%\", \"%func%\")\n  function %func%(%params%): %ret%;\n",
         &[
-            ("mod",    wasm_module),
-            ("func",   &binding.executor_method),
+            ("mod", wasm_module),
+            ("func", &binding.executor_method),
             ("params", &params.join(", ")),
-            ("ret",    ret_ts),
+            ("ret", ret_ts),
         ],
     )
 }
 
-fn render_factory_method(
-    binding: &crate::codegen::model::BindingDef,
-) -> String {
+fn render_factory_method(binding: &crate::codegen::model::BindingDef) -> String {
     let builder_class = format!("{}Builder", capitalize(&binding.builder_name));
     let method = &binding.builder_name;
 
-    let (params, args): (Vec<String>, Vec<String>) = binding.fields.iter()
+    let (params, args): (Vec<String>, Vec<String>) = binding
+        .fields
+        .iter()
         .filter(|f| f.expansion.ta_default.is_none()) // required fields only
-        .map(|f| (format!("{}: {}", f.name, f.expansion.ta_type), f.name.clone()))
+        .map(|f| {
+            (
+                format!("{}: {}", f.name, f.expansion.ta_type),
+                f.name.clone(),
+            )
+        })
         .unzip();
 
     let sep = if args.is_empty() { "" } else { ", " };
     render(
         "  %method%(%params%): %builder% {\n    return new %builder%(this%sep%%args%);\n  }\n",
         &[
-            ("method",  method),
-            ("params",  &params.join(", ")),
+            ("method", method),
+            ("params", &params.join(", ")),
             ("builder", &builder_class),
-            ("sep",     sep),
-            ("args",    &args.join(", ")),
+            ("sep", sep),
+            ("args", &args.join(", ")),
         ],
     )
 }
@@ -133,30 +146,39 @@ fn render_builder_class(
     }
 
     // Setter methods — optional fields only; required fields go through the constructor.
-    let setters: String = binding.fields.iter()
+    let setters: String = binding
+        .fields
+        .iter()
         .filter(|f| f.expansion.ta_default.is_some())
         .map(|f| {
             let ts_type = &f.expansion.ta_type;
             let setter = f.setter_name.as_deref().unwrap_or(&f.name);
-            let param  = format!("{setter}: {ts_type}");
+            let param = format!("{setter}: {ts_type}");
             let assign = format!("this._{} = {setter};", f.name);
             render(
                 "  %setter%(%param%): %builder% {\n    %assign%\n    return this;\n  }\n",
                 &[
-                    ("setter",  setter),
-                    ("param",   &param),
+                    ("setter", setter),
+                    ("param", &param),
                     ("builder", &builder_class),
-                    ("assign",  &assign),
+                    ("assign", &assign),
                 ],
             )
         })
         .collect();
 
-    let call = format!("{wasm_module}.{}({})", binding.executor_method, all_call_args.join(", "));
+    let call = format!(
+        "{wasm_module}.{}({})",
+        binding.executor_method,
+        all_call_args.join(", ")
+    );
     // TA deserializes the return value: ABI scalar → TS value.
     let (execute_line, ret_type) = match &binding.return_expansion {
         Some(re) => (
-            format!("    const {} = {call};\n    return {};\n", re.abi[0].name, re.abi_to_ts.exprs[0]),
+            format!(
+                "    const {} = {call};\n    return {};\n",
+                re.abi[0].name, re.abi_to_ts.exprs[0]
+            ),
             re.ta_type.as_str(),
         ),
         None => (format!("    {call};\n"), "void"),
@@ -183,17 +205,17 @@ fn render_builder_class(
 
 "#,
         &[
-            ("builder",        &builder_class),
+            ("builder", &builder_class),
             ("private_fields", &private_fields),
-            ("svc",            svc_field),
-            ("factory",        &factory_class),
-            ("ctor_sep",       ctor_sep),
-            ("ctor_params",    &ctor_param_list.join(", ")),
-            ("ctor_assigns",   &ctor_assigns),
-            ("setters",        &setters_block),
-            ("ret_type",       ret_type),
-            ("str_preamble",   &str_preamble),
-            ("execute_line",   &execute_line),
+            ("svc", svc_field),
+            ("factory", &factory_class),
+            ("ctor_sep", ctor_sep),
+            ("ctor_params", &ctor_param_list.join(", ")),
+            ("ctor_assigns", &ctor_assigns),
+            ("setters", &setters_block),
+            ("ret_type", ret_type),
+            ("str_preamble", &str_preamble),
+            ("execute_line", &execute_line),
         ],
     )
 }

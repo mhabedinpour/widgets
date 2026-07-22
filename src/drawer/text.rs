@@ -1,5 +1,5 @@
-use alloc::string::String;
 use crate::drawer::{Baseline, Color, Drawer, Font, Point, TextAlignment};
+use alloc::string::String;
 
 /// @wasm required="text,position"
 #[derive(Clone)]

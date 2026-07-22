@@ -40,13 +40,13 @@ pub enum HttpError {
 impl core::fmt::Display for HttpError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(match self {
-            Self::UnsupportedScheme  => "unsupported scheme",
-            Self::InvalidPort        => "invalid port",
-            Self::DnsQueryFailed     => "DNS query failed",
-            Self::NoDnsResult        => "no DNS result",
-            Self::ConnectFailed      => "connect failed",
-            Self::WriteFailed        => "write failed",
-            Self::FlushFailed        => "flush failed",
+            Self::UnsupportedScheme => "unsupported scheme",
+            Self::InvalidPort => "invalid port",
+            Self::DnsQueryFailed => "DNS query failed",
+            Self::NoDnsResult => "no DNS result",
+            Self::ConnectFailed => "connect failed",
+            Self::WriteFailed => "write failed",
+            Self::FlushFailed => "flush failed",
             Self::TlsHandshakeFailed => "TLS handshake failed",
         })
     }
@@ -72,7 +72,7 @@ pub fn parse_url(url: &str) -> Result<ParsedUrl<'_>, HttpError> {
 
     let (host_port, path) = match rest.find('/') {
         Some(i) => (&rest[..i], &rest[i..]),
-        None    => (rest, "/"),
+        None => (rest, "/"),
     };
 
     let (host, port) = match host_port.rfind(':') {
@@ -85,7 +85,12 @@ pub fn parse_url(url: &str) -> Result<ParsedUrl<'_>, HttpError> {
         None => (host_port, default_port),
     };
 
-    Ok(ParsedUrl { is_https, host, port, path })
+    Ok(ParsedUrl {
+        is_https,
+        host,
+        port,
+        path,
+    })
 }
 
 /// @wasm
