@@ -27,19 +27,20 @@ use esp_hub75::Hub75Pins16;
 use log::info;
 use static_cell::StaticCell;
 use widgets::backend::lcd::{LCDCAM64x64, LCDCAM64x64Flusher};
+use widgets::boot_screen;
 use widgets::compiled_widgets;
 use widgets::console::ConsoleLogger;
 use widgets::drawer::{Point, Rect, Size};
 use widgets::http::HttpService;
 use widgets::network::NetworkService;
 use widgets::time::timer::TimeService;
-use widgets::time_sync::start as start_time_sync;
 use widgets::widget::executor::wasm::WasmExecutor;
 use widgets::widget::manager::WidgetManager;
 use widgets::widget::{Widget, WidgetConfig, WidgetId};
 
 use embassy_net::{Config as NetConfig, DhcpConfig, Runner, StackResources};
 use esp_radio::wifi::{Config as WifiConfig, WifiController, sta::StationConfig};
+use widgets::time_sync::sntp::{TimeSyncService, time_sync_task};
 
 // Generated from config.json at build time.
 include!(concat!(env!("OUT_DIR"), "/config.rs"));
@@ -151,31 +152,34 @@ async fn main(spawner: Spawner) -> ! {
     spawner.spawn(net_task(runner).unwrap());
     spawner.spawn(connection_task(wifi_controller).unwrap());
 
+    // Init display early so we can show a boot screen while Wi-Fi connects.
+    let pins = hub75_pins!(peripherals);
+    let freq = Rate::from_mhz(DISPLAY_FREQ_MHZ);
+    let backend = LCDCAM64x64::new(pins, peripherals.LCD_CAM, peripherals.DMA_CH0, freq);
+    let drawer = backend.1;
+    init_display_flusher(
+        peripherals.CPU_CTRL,
+        sw_interrupt.software_interrupt1,
+        backend.0,
+    );
+
+    // Animate while waiting for DHCP.
     info!("Waiting for Wi-Fi DHCP...");
-    stack.wait_config_up().await;
+    boot_screen::run(&drawer, stack).await;
     info!("Wi-Fi DHCP configured!");
     if let Some(config) = stack.config_v4() {
         info!("IP Address: {:?}", config.address);
     }
 
-    start_time_sync(spawner, stack);
+    let time_sync: &'static TimeSyncService = Box::leak(Box::new(TimeSyncService::new(stack)));
+    spawner.spawn(time_sync_task(time_sync).unwrap());
 
-    let pins = hub75_pins!(peripherals);
-    let freq = Rate::from_mhz(DISPLAY_FREQ_MHZ);
-
-    let backend = LCDCAM64x64::new(pins, peripherals.LCD_CAM, peripherals.DMA_CH0, freq);
     let mut manager = WidgetManager::new(
-        backend.1,
-        TimeService::new(),
+        drawer,
+        TimeService::new(time_sync),
         HttpService::new(spawner, stack),
         ConsoleLogger::new(),
         NetworkService::new(stack),
-    );
-
-    init_display_flusher(
-        peripherals.CPU_CTRL,
-        sw_interrupt.software_interrupt1,
-        backend.0,
     );
 
     add_widgets!(manager);

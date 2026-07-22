@@ -1,4 +1,5 @@
 use crate::time::{CreateTimeoutData, DeleteTimeoutData, GlobalTime, Time, TimerId};
+use crate::time_sync::sntp::TimeSyncService;
 use crate::widget::WidgetId;
 use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, BinaryHeap};
@@ -78,15 +79,31 @@ impl TimerState {
         recurring: Option<Duration>,
     ) {
         let expiration = Instant::now() + duration;
-        let key = TimerKey { widget_id, timer_id };
-        self.active.insert(key, TimerEntry { expiration, recurring });
-        self.heap.push(Reverse(HeapEntry { expiration, widget_id, timer_id }));
+        let key = TimerKey {
+            widget_id,
+            timer_id,
+        };
+        self.active.insert(
+            key,
+            TimerEntry {
+                expiration,
+                recurring,
+            },
+        );
+        self.heap.push(Reverse(HeapEntry {
+            expiration,
+            widget_id,
+            timer_id,
+        }));
     }
 
     /// Lazy cancel: remove from `active`; the heap entry is discarded when it
     /// surfaces during `poll`.
     fn remove(&mut self, widget_id: WidgetId, timer_id: TimerId) {
-        self.active.remove(&TimerKey { widget_id, timer_id });
+        self.active.remove(&TimerKey {
+            widget_id,
+            timer_id,
+        });
     }
 
     fn poll(&mut self) -> Vec<(WidgetId, TimerId)> {
@@ -103,7 +120,10 @@ impl TimerState {
             }
 
             let Reverse(entry) = self.heap.pop().unwrap();
-            let key = TimerKey { widget_id: entry.widget_id, timer_id: entry.timer_id };
+            let key = TimerKey {
+                widget_id: entry.widget_id,
+                timer_id: entry.timer_id,
+            };
 
             // Stale-entry check: the heap entry is stale if it was cancelled
             // (key absent) or superseded by a reschedule (expiration mismatch).
@@ -136,12 +156,14 @@ impl TimerState {
 
 pub struct TimeService {
     state: Rc<RefCell<TimerState>>,
+    time_sync: &'static TimeSyncService,
 }
 
 impl TimeService {
-    pub fn new() -> Self {
+    pub fn new(time_sync: &'static TimeSyncService) -> Self {
         Self {
             state: Rc::new(RefCell::new(TimerState::new())),
+            time_sync,
         }
     }
 
@@ -152,7 +174,9 @@ impl TimeService {
         duration: Duration,
         recurring: Option<Duration>,
     ) {
-        self.state.borrow_mut().insert(widget_id, timer_id, duration, recurring);
+        self.state
+            .borrow_mut()
+            .insert(widget_id, timer_id, duration, recurring);
     }
 
     pub fn cancel(&self, widget_id: WidgetId, timer_id: TimerId) {
@@ -166,7 +190,11 @@ impl GlobalTime for TimeService {
     }
 
     fn scoped(&self, widget_id: WidgetId) -> Box<dyn Time> {
-        Box::new(WidgetTime::new(widget_id, Rc::clone(&self.state)))
+        Box::new(WidgetTime::new(
+            widget_id,
+            Rc::clone(&self.state),
+            self.time_sync,
+        ))
     }
 }
 
@@ -174,14 +202,20 @@ pub struct WidgetTime {
     pub widget_id: WidgetId,
     next_id: u32,
     state: Rc<RefCell<TimerState>>,
+    time_sync: &'static TimeSyncService,
 }
 
 impl WidgetTime {
-    fn new(widget_id: WidgetId, state: Rc<RefCell<TimerState>>) -> Self {
+    fn new(
+        widget_id: WidgetId,
+        state: Rc<RefCell<TimerState>>,
+        time_sync: &'static TimeSyncService,
+    ) -> Self {
         Self {
             widget_id,
             next_id: 0,
             state,
+            time_sync,
         }
     }
 }
@@ -190,8 +224,14 @@ impl Time for WidgetTime {
     fn create_timeout(&mut self, data: CreateTimeoutData) -> TimerId {
         let id = TimerId(self.next_id);
         self.next_id += 1;
-        let recurring = if data.recurring { Some(data.duration) } else { None };
-        self.state.borrow_mut().insert(self.widget_id, id, data.duration, recurring);
+        let recurring = if data.recurring {
+            Some(data.duration)
+        } else {
+            None
+        };
+        self.state
+            .borrow_mut()
+            .insert(self.widget_id, id, data.duration, recurring);
         id
     }
 
@@ -200,10 +240,10 @@ impl Time for WidgetTime {
     }
 
     fn get_unix_timestamp(&mut self) -> i64 {
-        crate::time_sync::get_unix_timestamp().unwrap_or(0)
+        self.time_sync.get_unix_timestamp().unwrap_or(0)
     }
 
     fn get_last_sync(&mut self) -> i64 {
-        crate::time_sync::get_last_sync_unix().unwrap_or(-1)
+        self.time_sync.get_last_sync_unix().unwrap_or(-1)
     }
 }
