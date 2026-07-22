@@ -6,6 +6,7 @@ use crate::widget::WidgetId;
 use crate::{use_psram_heap, use_sram_heap};
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::fmt::Write as FmtWrite;
@@ -50,8 +51,34 @@ struct TaggedRequest {
     data: HttpRequestData,
 }
 
-type HttpChannel = Channel<CriticalSectionRawMutex, TaggedRequest, CHANNEL_DEPTH>;
-type CompletedQueue = Mutex<RefCell<Vec<(WidgetId, HttpResponse)>>>;
+type HttpChannel = Channel<CriticalSectionRawMutex, Option<TaggedRequest>, CHANNEL_DEPTH>;
+
+/// Shared completed-response buffer.
+///
+/// Wraps `critical_section::Mutex<RefCell<Vec<_>>>` in a newtype so we can
+/// implement `Send`.  `critical_section::Mutex` is already unconditionally
+/// `Sync` (all access disables interrupts), but the inner `RefCell` makes the
+/// whole type `!Send`.  On the single-core ESP32-S3 every access is already
+/// serialised by the critical section, so the `Send` impl is sound.
+struct CompletedQueue(Mutex<RefCell<Vec<(WidgetId, HttpResponse)>>>);
+
+// SAFETY: All mutations go through `critical_section::with`, which disables
+// interrupts and guarantees exclusive access on any single-core target.
+unsafe impl Send for CompletedQueue {}
+
+impl CompletedQueue {
+    fn new() -> Self {
+        Self(Mutex::new(RefCell::new(Vec::new())))
+    }
+
+    fn push(&self, item: (WidgetId, HttpResponse)) {
+        critical_section::with(|cs| self.0.borrow(cs).borrow_mut().push(item));
+    }
+
+    fn drain(&self) -> Vec<(WidgetId, HttpResponse)> {
+        critical_section::with(|cs| self.0.borrow(cs).borrow_mut().drain(..).collect())
+    }
+}
 
 /// Wraps `esp_hal::rng::Rng` and asserts the `CryptoRng` contract.
 ///
@@ -94,32 +121,39 @@ impl rand_core::CryptoRng for EspCryptoRng {}
 pub struct HttpService {
     spawner: Spawner,
     stack: Stack<'static>,
-    completed: &'static CompletedQueue,
+    completed: Arc<CompletedQueue>,
 }
 
 impl HttpService {
     pub fn new(spawner: Spawner, stack: Stack<'static>) -> Self {
-        let completed: &'static CompletedQueue =
-            Box::leak(Box::new(Mutex::new(RefCell::new(Vec::new()))));
         Self {
             spawner,
             stack,
-            completed,
+            completed: Arc::new(CompletedQueue::new()),
         }
     }
 }
 
 impl GlobalHttpClient for HttpService {
     fn poll(&mut self) -> Vec<(WidgetId, HttpResponse)> {
-        critical_section::with(|cs| self.completed.borrow(cs).borrow_mut().drain(..).collect())
+        self.completed.drain()
     }
 
     fn scoped(&self, widget_id: WidgetId) -> Box<dyn Http> {
-        let channel: &'static HttpChannel = Box::leak(Box::new(Channel::new()));
-        self.spawner
-            .spawn(widget_http_task(self.stack, widget_id, channel, self.completed).unwrap());
+        let channel = Arc::new(Channel::new());
+        self.spawner.spawn(
+            widget_http_task(
+                self.stack,
+                widget_id,
+                Arc::clone(&channel),
+                Arc::clone(&self.completed),
+            )
+            .unwrap(),
+        );
         Box::new(WidgetHttpClient {
             channel,
+            completed: Arc::clone(&self.completed),
+            widget_id,
             next_id: 0,
         })
     }
@@ -130,7 +164,9 @@ impl GlobalHttpClient for HttpService {
 // ---------------------------------------------------------------------------
 
 pub struct WidgetHttpClient {
-    channel: &'static HttpChannel,
+    channel: Arc<HttpChannel>,
+    completed: Arc<CompletedQueue>,
+    widget_id: WidgetId,
     next_id: u32,
 }
 
@@ -138,10 +174,34 @@ impl Http for WidgetHttpClient {
     fn send_request(&mut self, data: HttpRequestData) -> RequestId {
         self.next_id = self.next_id.wrapping_add(1);
         let id = RequestId(self.next_id);
-        if self.channel.try_send(TaggedRequest { id, data }).is_err() {
-            log::warn!("HTTP channel full, dropping request {}", id.0);
+        if self
+            .channel
+            .try_send(Some(TaggedRequest { id, data }))
+            .is_err()
+        {
+            log::warn!("HTTP channel full, returning error for request {}", id.0);
+            self.completed.push((
+                self.widget_id,
+                HttpResponse {
+                    request_id: id,
+                    headers: None,
+                    body: None,
+                    error: Some(HttpError::ChannelFull),
+                },
+            ));
         }
         id
+    }
+}
+
+impl Drop for WidgetHttpClient {
+    fn drop(&mut self) {
+        // Drain pending requests — no one will ever receive their responses.
+        // This guarantees there is always room for the stop sentinel below.
+        while self.channel.try_receive().is_ok() {}
+        // Send None as the stop sentinel.  The task exits its receive loop on
+        // seeing it and then frees its PSRAM buffers.
+        let _ = self.channel.try_send(None);
     }
 }
 
@@ -329,42 +389,49 @@ async fn execute_request(
 async fn widget_http_task(
     stack: Stack<'static>,
     widget_id: WidgetId,
-    channel: &'static HttpChannel,
-    completed: &'static CompletedQueue,
+    channel: Arc<HttpChannel>,
+    completed: Arc<CompletedQueue>,
 ) {
-    // All buffers are heap-allocated once per widget task and reused for
-    // every subsequent request — no per-request allocation overhead.
     use_psram_heap();
-    let tcp_rx: &'static mut [u8] = Box::leak(Box::new([0u8; TCP_BUF_SIZE]));
-    let tcp_tx: &'static mut [u8] = Box::leak(Box::new([0u8; TCP_BUF_SIZE]));
-    let tls_rx: &'static mut [u8] = Box::leak(Box::new([0u8; TLS_RX_BUF_SIZE]));
-    let tls_tx: &'static mut [u8] = Box::leak(Box::new([0u8; TLS_TX_BUF_SIZE]));
+    let mut tcp_rx = Box::new([0u8; TCP_BUF_SIZE]);
+    let mut tcp_tx = Box::new([0u8; TCP_BUF_SIZE]);
+    let mut tls_rx = Box::new([0u8; TLS_RX_BUF_SIZE]);
+    let mut tls_tx = Box::new([0u8; TLS_TX_BUF_SIZE]);
     use_sram_heap();
 
     stack.wait_config_up().await;
 
     loop {
-        let TaggedRequest { id, data: req } = channel.receive().await;
+        let Some(TaggedRequest { id, data: req }) = channel.receive().await else {
+            // None is the stop sentinel sent by WidgetHttpClient::drop.
+            break;
+        };
 
-        let (headers, body, error) =
-            match execute_request(stack, tcp_rx, tcp_tx, tls_rx, tls_tx, &req).await {
-                Ok((h, b)) => (Some(h), Some(b), None),
-                Err(e) => {
-                    log::error!("HTTP[S] request {} to {} failed: {}", id.0, req.url, e);
-                    (None, None, Some(e))
-                }
-            };
+        let (headers, body, error) = match execute_request(
+            stack,
+            tcp_rx.as_mut_slice(),
+            tcp_tx.as_mut_slice(),
+            tls_rx.as_mut_slice(),
+            tls_tx.as_mut_slice(),
+            &req,
+        )
+        .await
+        {
+            Ok((h, b)) => (Some(h), Some(b), None),
+            Err(e) => {
+                log::error!("HTTP[S] request {} to {} failed: {}", id.0, req.url, e);
+                (None, None, Some(e))
+            }
+        };
 
-        critical_section::with(|cs| {
-            completed.borrow(cs).borrow_mut().push((
-                widget_id,
-                HttpResponse {
-                    request_id: id,
-                    headers,
-                    body,
-                    error,
-                },
-            ));
-        });
+        completed.push((
+            widget_id,
+            HttpResponse {
+                request_id: id,
+                headers,
+                body,
+                error,
+            },
+        ));
     }
 }

@@ -29,6 +29,7 @@ pub struct HttpResponse {
 pub enum HttpError {
     UnsupportedScheme,
     InvalidPort,
+    ChannelFull,
     DnsQueryFailed,
     NoDnsResult,
     ConnectFailed,
@@ -42,6 +43,7 @@ impl core::fmt::Display for HttpError {
         f.write_str(match self {
             Self::UnsupportedScheme => "unsupported scheme",
             Self::InvalidPort => "invalid port",
+            Self::ChannelFull => "request channel full",
             Self::DnsQueryFailed => "DNS query failed",
             Self::NoDnsResult => "no DNS result",
             Self::ConnectFailed => "connect failed",
