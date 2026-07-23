@@ -3,13 +3,15 @@ use crate::drawer::{Baseline, ClearData, Color, Font, Point, TextAlignment, Text
 use crate::widget::WidgetEvent;
 use crate::widget::executor::{Context, Executor};
 use crate::{use_psram_heap, use_sram_heap};
+use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use wasmi::{
-    Caller, Config, Engine, Linker, Module, Store, StoreLimits, StoreLimitsBuilder, TypedFunc,
+    Caller, Config, Engine, Error, Linker, Module, Store, StoreLimits, StoreLimitsBuilder,
+    TypedFunc,
 };
 
-const MAX_WASM_MEMORY_BYTES: usize = 100 * 1024;
+const MAX_WASM_MEMORY_BYTES: usize = 512 * 1024;
 
 trait HostModule {
     fn name(&self) -> &str;
@@ -17,7 +19,7 @@ trait HostModule {
         &self,
         linker: &mut Linker<WasmCtx>,
         store: &mut Store<WasmCtx>,
-    ) -> Result<(), wasmi::Error>;
+    ) -> Result<(), Error>;
 }
 
 struct WasmCtx {
@@ -75,7 +77,7 @@ impl HostModule for ConfigModule {
         &self,
         linker: &mut Linker<WasmCtx>,
         store: &mut Store<WasmCtx>,
-    ) -> Result<(), wasmi::Error> {
+    ) -> Result<(), Error> {
         linker.define(
             self.name(),
             "get",
@@ -86,10 +88,10 @@ impl HostModule for ConfigModule {
                  key_ptr: u32,
                  out_max: u32,
                  out_ptr: u32|
-                 -> Result<i32, wasmi::Error> {
+                 -> Result<i32, Error> {
                     let memory = match caller.get_export("memory") {
                         Some(wasmi::Extern::Memory(m)) => m,
-                        _ => return Err(wasmi::Error::new("guest memory export missing")),
+                        _ => return Err(Error::new("guest memory export missing")),
                     };
 
                     // Read the key into an owned String so we can release the
@@ -98,13 +100,13 @@ impl HostModule for ConfigModule {
                         let start = key_ptr as usize;
                         let end = start
                             .checked_add(key_len as usize)
-                            .ok_or_else(|| wasmi::Error::new("key pointer overflow"))?;
+                            .ok_or_else(|| Error::new("key pointer overflow"))?;
                         let bytes = memory
                             .data(&caller)
                             .get(start..end)
-                            .ok_or_else(|| wasmi::Error::new("out-of-bounds key pointer"))?;
+                            .ok_or_else(|| Error::new("out-of-bounds key pointer"))?;
                         let s = core::str::from_utf8(bytes)
-                            .map_err(|_| wasmi::Error::new("key is not valid UTF-8"))?;
+                            .map_err(|_| Error::new("key is not valid UTF-8"))?;
                         String::from(s)
                     };
 
@@ -128,11 +130,11 @@ impl HostModule for ConfigModule {
                             let start = out_ptr as usize;
                             let end = start
                                 .checked_add(write_len)
-                                .ok_or_else(|| wasmi::Error::new("output pointer overflow"))?;
+                                .ok_or_else(|| Error::new("output pointer overflow"))?;
                             memory
                                 .data_mut(&mut caller)
                                 .get_mut(start..end)
-                                .ok_or_else(|| wasmi::Error::new("out-of-bounds output pointer"))?
+                                .ok_or_else(|| Error::new("out-of-bounds output pointer"))?
                                 .copy_from_slice(&bytes[..write_len]);
                             Ok(write_len as i32)
                         }
@@ -155,17 +157,24 @@ impl HostModule for EnvModule {
         &self,
         linker: &mut Linker<WasmCtx>,
         store: &mut Store<WasmCtx>,
-    ) -> Result<(), wasmi::Error> {
+    ) -> Result<(), Error> {
         linker.define(
             self.name(),
             "abort",
             wasmi::Func::wrap(
-                store,
-                |_caller: Caller<'_, WasmCtx>,
-                 _message: i32,
-                 _file_name: i32,
-                 _line: i32,
-                 _col: i32| {},
+                &mut *store,
+                |caller: Caller<'_, WasmCtx>, message: i32, file_name: i32, line: i32, col: i32| {
+                    caller
+                        .data()
+                        .ctx
+                        .as_ref()
+                        .unwrap()
+                        .console
+                        .log_error(LogData {
+                            message: format!("{message} {file_name} {line} {col}"),
+                        });
+                    Err::<(), Error>(Error::new("Guest code called abort()"))
+                },
             ),
         )?;
 
@@ -193,18 +202,18 @@ impl WasmExecutor {
                 render_func: None,
                 store,
                 failed: true,
-                init_error: Some(alloc::format!("widget init failed: {}", err)),
+                init_error: Some(format!("widget init failed: {}", err)),
             }
         })
     }
 
-    fn with_modules(wasm_binary: &[u8]) -> Result<Self, wasmi::Error> {
+    fn with_modules(wasm_binary: &[u8]) -> Result<Self, Error> {
         use_psram_heap();
 
         let mut config = Config::default();
         config.consume_fuel(false);
         config.set_min_stack_height(512);
-        config.set_max_stack_height(4 * 1024);
+        config.set_max_stack_height(64 * 1024);
         config.set_max_cached_stacks(0);
 
         let engine = Engine::new(&config);
@@ -309,7 +318,7 @@ impl Executor for WasmExecutor {
 
         if let Err(err) = render_func.call(&mut self.store, ()) {
             self.failed = true;
-            let message = alloc::format!("widget render failed: {}", err);
+            let message = format!("widget render failed: {}", err);
             if let Some(ctx) = self.store.data_mut().ctx.as_mut() {
                 ctx.console.log_error(LogData { message });
             }

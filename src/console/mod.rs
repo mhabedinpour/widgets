@@ -14,9 +14,9 @@ pub struct LogData {
 /// @wasm
 pub trait Console {
     /// @wasm builder_name="info"
-    fn log_info(&mut self, data: LogData);
+    fn log_info(&self, data: LogData);
     /// @wasm builder_name="error"
-    fn log_error(&mut self, data: LogData);
+    fn log_error(&self, data: LogData);
 }
 
 pub trait GlobalConsole {

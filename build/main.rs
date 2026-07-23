@@ -18,6 +18,7 @@ fn main() {
     let events = codegen::parser::scan_events(Path::new("src/widget/mod.rs"));
 
     println!("cargo:rerun-if-changed=src");
+    println!("cargo:rerun-if-changed=widgets/lib");
 
     let bindings_dir = Path::new("widgets/lib/bindings");
     fs::create_dir_all(bindings_dir).unwrap();

@@ -45,12 +45,14 @@
       "width": 64,
       "height": 36,
       "config": {
-        "carousel_slides": "weather,network",
+        "carousel_slides": "weather,network,spotify",
         "carousel_period_sec": "10",
         "weather_lat": "52.374",
         "weather_lon": "4.899",
         "weather_refresh_sec": "30",
-        "network_refresh_sec": "20"
+        "network_refresh_sec": "20",
+        "spotify_access_token": "your-spotify-bearer-token",
+        "spotify_refresh_sec": "5"
       }
     }
   ]

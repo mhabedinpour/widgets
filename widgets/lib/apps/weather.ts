@@ -2,6 +2,7 @@
 // Animated icon + temperature + condition label.
 // Designed for a 64×23 area.
 
+import { valueStart, valueEnd, getNumber } from "../jsonlite";
 import { Drawer } from "../bindings/drawer";
 import { Console } from "../bindings/console";
 import { Config } from "../config";
@@ -52,42 +53,25 @@ function requestWeather(): void {
 function onWeatherResponse(res: HttpResponseEvent): void {
   weatherInFlight = false;
   if (res.success) {
-    const temp = extractJsonNumber(res.body, "temperature_2m");
-    const code = extractJsonNumber(res.body, "weather_code");
-    const isDay = extractJsonNumber(res.body, "is_day");
-    if (temp == temp) weatherTemp = temp; // NaN != NaN guard
-    if (code == code) weatherCode = <i32>code;
-    if (isDay == isDay) weatherIsDay = isDay != 0;
-    console.info("Weather updated: " + formatTempNumber(weatherTemp) + "C " + weatherLabel(weatherCode)).execute();
+    const body = res.body;
+    // Scope all key lookups to the "current" object — "temperature_2m" etc.
+    // also appear as keys inside "current_units".
+    const curStart = valueStart(body, "current", 0, body.length);
+    if (curStart >= 0 && body.charCodeAt(curStart) == 0x7B) { // '{'
+      const curEnd = valueEnd(body, curStart);
+      const temp   = getNumber(body, "temperature_2m", curStart, curEnd);
+      const code   = getNumber(body, "weather_code",   curStart, curEnd);
+      const isDay  = getNumber(body, "is_day",         curStart, curEnd);
+      weatherTemp  = temp  == temp  ? temp       : 0;   // x == x → not NaN
+      weatherCode  = code  == code  ? <i32>code  : -1;
+      weatherIsDay = isDay == isDay ? isDay != 0 : true;
+      console.info("Weather updated: " + formatTempNumber(weatherTemp) + "C " + weatherLabel(weatherCode)).execute();
+    } else {
+      console.error("Weather: missing 'current' in response").execute();
+    }
   } else {
     console.error("Weather request failed").execute();
   }
-}
-
-// Find the first numeric value after `"key":` in a JSON string.
-// Returns NaN if not found or value is a string.
-function extractJsonNumber(body: string, key: string): f64 {
-  const search = '"' + key + '":';
-  let from: i32 = 0;
-  while (true) {
-    const idx = body.indexOf(search, from);
-    if (idx < 0) return NaN;
-    const vs = idx + search.length;
-    if (vs >= body.length) return NaN;
-    const c = body.charCodeAt(vs);
-    // Numeric value starts with digit, '-', or '.'
-    if ((c >= 48 && c <= 57) || c == 45 || c == 46) {
-      let end = vs;
-      while (end < body.length) {
-        const ch = body.charCodeAt(end);
-        if ((ch < 48 || ch > 57) && ch != 46 && ch != 45 && ch != 43 && ch != 101 && ch != 69) break;
-        end++;
-      }
-      return parseFloat(body.substring(vs, end));
-    }
-    from = idx + 1; // this key had a string value; try next occurrence
-  }
-  return NaN; // unreachable; satisfies the type checker
 }
 
 function formatTempNumber(t: f64): string {
@@ -278,14 +262,13 @@ export class WeatherApp extends SubWidget {
     drawer.clear().execute();
 
     // Hairline divider on the band's last row
-    drawer.line(new Point(0, 22), new Point(63, 22)).color(Palette.DIVIDER).execute();
 
     // Not loaded yet: three chasing dots in the band centre
     if (weatherCode < 0) {
       const active = <i32>((animFrame >> 1) % 3);
       for (let i = 0; i < 3; i++) {
         const col = i == active ? Palette.CLOUD : Palette.CLOUD_DARK;
-        drawer.circle(new Point(26 + <u32>i * 6, 11), 1).fill_color(col).fill(true).execute();
+        drawer.circle(new Point(26 + <u32>i * 6, 7), 1).fill_color(col).fill(true).execute();
       }
       return;
     }
@@ -307,7 +290,5 @@ export class WeatherApp extends SubWidget {
       .color(tempCol).font(Font.Font7x13Bold).baseline(Baseline.Top).execute();
 
     // Condition label
-    drawer.text(weatherLabel(weatherCode), new Point(20, 16))
-      .color(Palette.TEXT_MUTED).font(Font.Font4x6).baseline(Baseline.Top).execute();
   }
 }

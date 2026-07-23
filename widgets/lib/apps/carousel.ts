@@ -18,6 +18,7 @@ import { Duration } from "../bindings/types";
 import { TimeApp } from "./time";
 import { WeatherApp } from "./weather";
 import { NetworkApp } from "./network";
+import { SpotifyApp } from "./spotify";
 
 const console = new Console();
 
@@ -29,6 +30,7 @@ function createApp(name: string): SubWidget | null {
   if (name == "time")    return new TimeApp();
   if (name == "weather") return new WeatherApp();
   if (name == "network") return new NetworkApp();
+  if (name == "spotify") return new SpotifyApp();
   return null;
 }
 

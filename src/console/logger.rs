@@ -21,11 +21,11 @@ struct WidgetConsole {
 }
 
 impl Console for WidgetConsole {
-    fn log_info(&mut self, data: LogData) {
+    fn log_info(&self, data: LogData) {
         log::info!("[widget {:?}] {}", self.widget_id, data.message);
     }
 
-    fn log_error(&mut self, data: LogData) {
+    fn log_error(&self, data: LogData) {
         log::error!("[widget {:?}] {}", self.widget_id, data.message);
     }
 }
