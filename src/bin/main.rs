@@ -134,7 +134,7 @@ async fn main(spawner: Spawner) -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let mut wdt0 = timg0.wdt;
     wdt0.enable();
-    wdt0.set_timeout(MwdtStage::Stage0, esp_hal::time::Duration::from_secs(2));
+    wdt0.set_timeout(MwdtStage::Stage0, esp_hal::time::Duration::from_secs(20));
     wdt0.set_stage_action(MwdtStage::Stage0, MwdtStageAction::ResetSystem);
 
     let sw_interrupt = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
