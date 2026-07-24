@@ -80,14 +80,12 @@ With WASM, each widget is an isolated module with its own memory and a well-defi
 - Per-widget viewports (coordinate translation + clipping)
 - JSON build-time config (pins, Wi-Fi, widget placement)
 - Dual-core: async OS on Core 0, DMA flush on Core 1
-- Three built-in widgets: clock, weather, network status
+- Five built-in widgets: clock, weather, network, spotify, carousel
 
 **Planned**
 - [ ] OTA widget updates (fetch + hot-swap WASM at runtime)
-- [ ] Multi-page / carousel mode
 - [ ] Brightness / gamma control
-- [ ] Widget-to-widget messaging
-- [ ] 128×64 and other matrix sizes
+- [ ] I/O Support (Sensors, Switches, etc)
 
 ---
 
@@ -227,6 +225,18 @@ Config keys: `lat`, `lon` (decimal degrees as strings).
 Shows a spinning animated globe, the device's internal IP address, and the public IP (fetched from `api.ipify.org`). The globe desaturates and a red slash appears when offline.
 
 No config keys required.
+
+### `spotify` — Now playing track
+
+Connects to the Spotify Web API to show the currently playing track name, artist, and a progress bar. Includes animated equalizer bars that bounce to a rhythm while music is playing, or a pause icon when paused.
+
+Config keys: `spotify_client_id`, `spotify_client_secret`, `spotify_refresh_token` (all from Spotify Developer Dashboard), and `spotify_refresh_sec` (poll interval, default 5).
+
+### `carousel` — Rotating widget container
+
+A meta-widget that can host multiple other widgets (slides) in the same display area and rotate between them automatically. It keeps all background slides "warm" (polling data and updating state) so they are ready when they rotate into view.
+
+Config keys: `carousel_slides` (comma-separated list of widget types, e.g., `"weather,network,spotify"`) and `carousel_period_sec` (how long each slide stays visible, default 10).
 
 ---
 
