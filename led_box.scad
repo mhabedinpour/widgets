@@ -26,11 +26,12 @@
 //   4. Press back piece on until all 6 clips click. Retention tabs
 //      press the matrix against the lip.
 //      (To open: press a flat tool into each window, lift the hook.)
-//   5. Feet from below: 4× M3×30 into the floor pads, heads hidden
-//      in the rubber recesses.
+//   5. Feet from below: 4× M3×16 into the floor pads, heads hidden
+//      in the rubber recesses. Wedge feet tilt the display back
+//      FOOT_TILT° (taller edge faces forward).
 //
 //  ── BOM ───────────────────────────────────────────────────────────
-//   4× M3×30 socket-cap — feet     4× BT2×6 thread-forming — ESP32
+//   4× M3×16 socket-cap — feet     4× BT2×6 thread-forming — ESP32
 //   2× rubber strips ~14×29 mm — foot recesses
 // ═══════════════════════════════════════════════════════════════════
 
@@ -96,11 +97,14 @@ CABLE_W  = 50;
 CABLE_D  = 18;
 
 /* [Feet — 2 side rails, screwed from below] */
-FOOT_W  = 20;
-FOOT_H  = 25;
-FOOT_HY = [10, 21];
-PAD_OD  = 8;
-PAD_H   = 2;
+FOOT_W    = 20;
+FOOT_H    = 15;    // height at the FRONT edge (tallest point)
+FOOT_TILT = 8;     // wedge angle (deg) — display leans back this much
+FOOT_EXT  = 25;    // rear reach past the back panel (kickstand — keeps
+                   // the tilted box from tipping backward)
+FOOT_HY   = [10, 21];
+PAD_OD    = 8;
+PAD_H     = 2;
 
 /* [Hardware] */
 M3_TAP    = 2.5;
@@ -141,8 +145,9 @@ TRAY_X0    = BOX_W/2 - PWR_PCB_W/2 - PWR_CLR - TRAY_RAIL_W;
 TRAY_W     = PWR_PCB_W + 2*PWR_CLR + 2*TRAY_RAIL_W;
 TRAY_TOP   = PWR_PCB_ZB + PWR_PCB_T + 0.3 + 1.4;            // rail top ≈ 18.4
 
-// Foot screws (X = rail centres)
+// Foot screws (X = rail centres); rails run FOOT_EXT past the back
 _FOOT_X = [FOOT_W/2, BOX_W - FOOT_W/2];              // 10, 189
+FOOT_D  = BOX_D + FOOT_EXT;                          // rail depth = 60
 
 // Clip frames: local (u=along wall, y=box depth, t=outward normal, 0 at
 // outer surface). One multmatrix per clip.
@@ -167,6 +172,14 @@ assert(CLIP_LIP_T + CLIP_CLEAR < WALL, "clip recess eats whole wall");
 assert(PWR_RELIEF < BACK_W,            "breakout recess breaks through wall");
 assert(PWR_PCB_Y0 > SPLIT_Y - 10,      "breakout board too long for chamber");
 assert(TRAY_TOP < SHELF_Z,             "tray taller than base zone");
+assert(FOOT_H - FOOT_D*tan(FOOT_TILT) > 5,
+       "foot tail vanishes — reduce FOOT_TILT or FOOT_EXT");
+assert(FOOT_H - FOOT_HY[1]*tan(FOOT_TILT) > 6 + M3_HEAD_H + 3,
+       "feet too short at the rear screws for head + threads");
+// Tip-over check: rear desk contact must sit behind the tilted CG
+// (CG ≈ box centre, ~140 mm up incl. feet, shifted back by the tilt)
+assert(FOOT_D*cos(FOOT_TILT) > BOX_D/2 + 140*sin(FOOT_TILT) + 10,
+       "kickstand too short for this tilt — increase FOOT_EXT");
 
 echo(str("Box W×D×H : ", BOX_W, " × ", BOX_D, " × ", BOX_H));
 echo(str("Bezel opening: ", OPEN_W, " × ", OPEN_W, " (lip ", FRONT_LIP, " mm)"));
@@ -215,7 +228,7 @@ module _pockets() {
     }
     for (fx = _FOOT_X, fy = FOOT_HY)                                 // foot pilots
         translate([fx, fy, -1])
-            cylinder(d=M3_TAP, h=WALL + PAD_H + 5, $fn=16);
+            cylinder(d=M3_TAP, h=WALL + PAD_H + 7, $fn=16);
     translate([BOX_W - WALL - 1,                                     // ESP32 USB-C slot
                ESP_FACE_Y - ESP_USBC_DEPTH + 5,
                ESP_Z0 + ESP_USBC_Z_INSET])
@@ -255,10 +268,12 @@ module _pwr_tray() {
         translate([rx, TRAY_Y0, PWR_PCB_ZB - TRAY_FLOOR_T])
             cube([TRAY_RAIL_W, BOX_D - BACK_W - TRAY_Y0,
                   TRAY_TOP - PWR_PCB_ZB + TRAY_FLOOR_T]);
-        lip_x = (rx == TRAY_X0) ? rx + TRAY_RAIL_W : rx - TRAY_LIP;
-        translate([lip_x, TRAY_Y0, PWR_PCB_ZB + PWR_PCB_T + 0.3])
-            cube([TRAY_LIP, BOX_D - BACK_W - TRAY_Y0,
-                  TRAY_TOP - PWR_PCB_ZB - PWR_PCB_T - 0.3]);
+        if (TRAY_LIP > 0) {
+            lip_x = (rx == TRAY_X0) ? rx + TRAY_RAIL_W : rx - TRAY_LIP;
+            translate([lip_x, TRAY_Y0, PWR_PCB_ZB + PWR_PCB_T + 0.3])
+                cube([TRAY_LIP, BOX_D - BACK_W - TRAY_Y0,
+                      TRAY_TOP - PWR_PCB_ZB - PWR_PCB_T - 0.3]);
+        }
     }
 }
 // Blocker fin on the FRONT piece: once the halves clip together it
@@ -332,24 +347,41 @@ module back_piece() {
 }
 
 // ═══ FOOT RAIL  (×2 — mirror one in slicer) ═══════════════════════
+// Wedge feet: bottom face slopes up toward the rear by FOOT_TILT, so
+// on a flat desk the whole box leans back FOOT_TILT degrees.
+// The rail runs FOOT_EXT past the back panel as a kickstand — the
+// rear desk contact lands well behind the tilted centre of gravity.
 module foot_rail() {
     INSET = 3; RDEPTH = 3;
     difference() {
-        hull()
-            for (x = [3, FOOT_W-3], y = [3, BOX_D-3])
+        hull() {
+            for (x = [3, FOOT_W-3], y = [3, FOOT_D-3])
                 translate([x, y, 0]) cylinder(r=3, h=FOOT_H, $fn=24);
-        translate([INSET, INSET, -1])
-            cube([FOOT_W - 2*INSET, BOX_D - 2*INSET, RDEPTH + 1]);
+        }
+
+        // Sloped bottom: full FOOT_H at the front (y=0), shorter at
+        // the rear — cut everything below the plane z = y·tan(TILT)
+        rotate([FOOT_TILT, 0, 0])
+            translate([-1, -10, -60])
+                cube([FOOT_W + 2, FOOT_D + 20, 60]);
+
+        // Rubber recess, parallel to the sloped bottom
+        rotate([FOOT_TILT, 0, 0])
+            translate([INSET, INSET, -0.1])
+                cube([FOOT_W - 2*INSET, FOOT_D - 2*INSET, RDEPTH + 0.1]);
+
+        // Screw shafts + head counterbores (box-vertical axes; the
+        // counterbore floor follows the slope at each hole's y)
         for (fy = FOOT_HY) translate([FOOT_W/2, fy, 0]) {
-            translate([0,0,-1]) cylinder(d=M3_CLEAR, h=FOOT_H+2, $fn=20);
-            translate([0,0,RDEPTH-0.1])
-                cylinder(d=M3_HEAD_D, h=M3_HEAD_H+0.1, $fn=24);
+            translate([0,0,-6]) cylinder(d=M3_CLEAR, h=FOOT_H+8, $fn=20);
+            translate([0,0, fy*tan(FOOT_TILT) + RDEPTH - 0.1])
+                cylinder(d=M3_HEAD_D, h=M3_HEAD_H+0.2, $fn=24);
         }
     }
 }
 
 // ═══ RENDER ═══════════════════════════════════════════════════════
-PART          = "back";   // "front" | "back" | "foot" | "assembly"
+PART          = "foot";   // "front" | "back" | "foot" | "assembly"
 CROSS_SECTION = false;
 
 module _render() {
