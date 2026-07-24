@@ -2,7 +2,6 @@ use crate::console::LogData;
 use crate::drawer::{Baseline, ClearData, Color, Font, Point, TextAlignment, TextData};
 use crate::widget::WidgetEvent;
 use crate::widget::executor::{Context, Executor};
-use crate::{use_psram_heap, use_sram_heap};
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -194,8 +193,6 @@ impl WasmExecutor {
     /// logs the cause on first render and paints an error state instead.
     pub fn new(wasm_binary: &[u8]) -> Self {
         Self::with_modules(wasm_binary).unwrap_or_else(|err| {
-            use_sram_heap();
-
             let engine = Engine::new(&Config::default());
             let store = Store::new(&engine, WasmCtx::new());
             Self {
@@ -208,8 +205,6 @@ impl WasmExecutor {
     }
 
     fn with_modules(wasm_binary: &[u8]) -> Result<Self, Error> {
-        use_psram_heap();
-
         let mut config = Config::default();
         config.consume_fuel(false);
         config.set_min_stack_height(512);
@@ -235,8 +230,6 @@ impl WasmExecutor {
 
         let instance = linker.instantiate_and_start(&mut store, &module)?;
         let render_func = instance.get_typed_func::<(), ()>(&store, "render")?;
-
-        use_sram_heap();
 
         Ok(Self {
             render_func: Some(render_func),
@@ -277,8 +270,6 @@ impl WasmExecutor {
                 baseline: Baseline::Middle,
             });
         }
-
-        use_sram_heap();
     }
 }
 
@@ -288,8 +279,6 @@ impl Executor for WasmExecutor {
     }
 
     fn render(&mut self, events: Option<Vec<WidgetEvent>>) {
-        use_psram_heap();
-
         if let Some(message) = self.init_error.take() {
             if let Some(ctx) = self.store.data_mut().ctx.as_mut() {
                 ctx.console.log_error(LogData { message });
@@ -324,7 +313,5 @@ impl Executor for WasmExecutor {
             }
             self.draw_error();
         }
-
-        use_sram_heap();
     }
 }

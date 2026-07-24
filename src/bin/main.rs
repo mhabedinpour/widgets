@@ -176,6 +176,8 @@ async fn main(spawner: Spawner) -> ! {
         info!("IP Address: {:?}", config.address);
     }
 
+    widgets::allocator::use_psram_heap();
+
     let time_sync: &'static TimeSyncService = Box::leak(Box::new(TimeSyncService::new(stack)));
     spawner.spawn(time_sync_task(time_sync).unwrap());
 

@@ -143,16 +143,12 @@ fn render_call_stmt(binding: &BindingDef, service_name: &str) -> String {
         Some(re) => {
             let to_abi = render(&re.rust_to_abi.exprs[0], &[("v", "__ret")]);
             format!(
-                "crate::use_sram_heap();\n                    \
-                 let __ret = {call};\n                    \
-                 crate::use_psram_heap();\n                    \
+                "let __ret = {call};\n                    \
                  Ok({to_abi})"
             )
         }
         None => format!(
-            "crate::use_sram_heap();\n                    \
-             {call};\n                    \
-             crate::use_psram_heap();\n                    \
+            "{call};\n                    \
              Ok(())"
         ),
     }

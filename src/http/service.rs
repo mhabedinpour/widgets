@@ -3,7 +3,6 @@ use crate::http::{
     parse_url,
 };
 use crate::widget::WidgetId;
-use crate::{use_psram_heap, use_sram_heap};
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
@@ -392,12 +391,10 @@ async fn widget_http_task(
     channel: Arc<HttpChannel>,
     completed: Arc<CompletedQueue>,
 ) {
-    use_psram_heap();
     let mut tcp_rx = Box::new([0u8; TCP_BUF_SIZE]);
     let mut tcp_tx = Box::new([0u8; TCP_BUF_SIZE]);
     let mut tls_rx = Box::new([0u8; TLS_RX_BUF_SIZE]);
     let mut tls_tx = Box::new([0u8; TLS_TX_BUF_SIZE]);
-    use_sram_heap();
 
     stack.wait_config_up().await;
 
