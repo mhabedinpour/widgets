@@ -22,7 +22,7 @@ use esp_hal::interrupt::software::{SoftwareInterrupt, SoftwareInterruptControl};
 use esp_hal::peripherals::CPU_CTRL;
 use esp_hal::system::Stack as HalStack;
 use esp_hal::time::Rate;
-use esp_hal::timer::timg::TimerGroup;
+use esp_hal::timer::timg::{MwdtStage, MwdtStageAction, TimerGroup};
 use esp_hub75::Hub75Pins16;
 use log::info;
 use static_cell::StaticCell;
@@ -132,6 +132,11 @@ async fn main(spawner: Spawner) -> ! {
     esp_alloc::psram_allocator!(peripherals.PSRAM, esp_hal::psram);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
+    let mut wdt0 = timg0.wdt;
+    wdt0.enable();
+    wdt0.set_timeout(MwdtStage::Stage0, esp_hal::time::Duration::from_secs(2));
+    wdt0.set_stage_action(MwdtStage::Stage0, MwdtStageAction::ResetSystem);
+
     let sw_interrupt = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     esp_rtos::start(timg0.timer0, sw_interrupt.software_interrupt0);
 
@@ -187,6 +192,7 @@ async fn main(spawner: Spawner) -> ! {
     manager.render();
 
     loop {
+        wdt0.feed();
         manager.poll_events();
         Timer::after_millis(10).await;
     }
