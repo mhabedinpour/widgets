@@ -2,6 +2,7 @@
 #![feature(allocator_api)]
 extern crate alloc;
 
+pub mod admin;
 pub mod allocator;
 pub mod backend;
 pub mod boot_screen;

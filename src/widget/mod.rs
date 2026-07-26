@@ -26,7 +26,7 @@ pub enum WidgetEvent {
 }
 
 #[derive(Ord, Eq, PartialEq, PartialOrd, Clone, Copy, Debug)]
-pub struct WidgetId(usize);
+pub struct WidgetId(pub usize);
 
 impl WidgetId {
     pub fn new(id: usize) -> Self {
@@ -36,5 +36,7 @@ impl WidgetId {
 
 pub struct Widget {
     pub placement: Rect,
+    pub r#type: String,
+    pub config: WidgetConfig,
     pub executor: Box<dyn Executor>,
 }

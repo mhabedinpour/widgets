@@ -13,6 +13,8 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
+use alloc::rc::Rc;
+use core::cell::RefCell;
 use embassy_executor::Spawner;
 use embassy_time::Timer;
 use esp_backtrace as _;
@@ -26,6 +28,7 @@ use esp_hal::timer::timg::{MwdtStage, MwdtStageAction, TimerGroup};
 use esp_hub75::Hub75Pins16;
 use log::info;
 use static_cell::StaticCell;
+use widgets::admin::server::{Server, admin_api_task};
 use widgets::backend::lcd::{LCDCAM64x64, LCDCAM64x64Flusher};
 use widgets::boot_screen;
 use widgets::compiled_widgets;
@@ -49,7 +52,6 @@ static STACK_NET: StaticCell<StackResources<8>> = StaticCell::new();
 static FLUSHER_STACK: StaticCell<HalStack<2048>> = StaticCell::new();
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
-// For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
 esp_bootloader_esp_idf::esp_app_desc!();
 
 fn flush_task(mut flusher: LCDCAM64x64Flusher<'static>) -> ! {
@@ -181,21 +183,27 @@ async fn main(spawner: Spawner) -> ! {
     let time_sync: &'static TimeSyncService = Box::leak(Box::new(TimeSyncService::new(stack)));
     spawner.spawn(time_sync_task(time_sync).unwrap());
 
-    let mut manager = WidgetManager::new(
-        drawer,
-        TimeService::new(time_sync),
-        HttpService::new(spawner, stack),
-        ConsoleLogger::new(),
-        NetworkService::new(stack),
+    let raw_manager = WidgetManager::new(
+        Box::new(drawer),
+        Box::new(TimeService::new(time_sync)),
+        Box::new(HttpService::new(spawner, stack)),
+        Box::new(ConsoleLogger::new()),
+        Box::new(NetworkService::new(stack)),
     );
 
-    add_widgets!(manager);
+    let manager = Rc::new(RefCell::new(raw_manager));
 
-    manager.render();
+    {
+        let mut mgr = manager.borrow_mut();
+        add_widgets!(mgr);
+        mgr.render();
+    }
+
+    spawner.spawn(admin_api_task(Server::new(stack, manager.clone())).unwrap());
 
     loop {
         wdt0.feed();
-        manager.poll_events();
+        manager.borrow_mut().poll_events();
         Timer::after_millis(10).await;
     }
 }

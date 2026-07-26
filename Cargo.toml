@@ -58,6 +58,9 @@ esp-hub75 = {git = "https://github.com/liebman/esp-hub75", branch = "main", feat
 embassy-sync = "0.8.0"
 wasmi     = { version = "1.1.0", default-features = false }
 u8g2-fonts = { version = "0.8", default-features = false }
+picoserve = { version = "0.19", features = ["embassy", "json"] }
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
 
 [build-dependencies]
 syn = { version = "3.0.2", features = ["full"] }

@@ -5,49 +5,62 @@ use crate::network::GlobalNetwork;
 use crate::time::GlobalTime;
 use crate::widget::executor::Context;
 use crate::widget::{Widget, WidgetConfig, WidgetEvent, WidgetId};
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-pub struct WidgetManager<
-    D: GlobalDrawer,
-    T: GlobalTime,
-    H: GlobalHttpClient,
-    C: GlobalConsole,
-    N: GlobalNetwork,
-> {
+pub struct WidgetManager {
     widgets: BTreeMap<WidgetId, Widget>,
-    drawer: D,
-    timer: T,
-    http: H,
-    console: C,
-    network: N,
+    drawer: Box<dyn GlobalDrawer>,
+    time: Box<dyn GlobalTime>,
+    http: Box<dyn GlobalHttpClient>,
+    console: Box<dyn GlobalConsole>,
+    network: Box<dyn GlobalNetwork>,
 }
 
-impl<D: GlobalDrawer, T: GlobalTime, H: GlobalHttpClient, C: GlobalConsole, N: GlobalNetwork>
-    WidgetManager<D, T, H, C, N>
-{
-    pub fn new(drawer: D, timer: T, http: H, console: C, network: N) -> Self {
+impl WidgetManager {
+    pub fn new(
+        drawer: Box<dyn GlobalDrawer>,
+        time: Box<dyn GlobalTime>,
+        http: Box<dyn GlobalHttpClient>,
+        console: Box<dyn GlobalConsole>,
+        network: Box<dyn GlobalNetwork>,
+    ) -> Self {
         Self {
             widgets: BTreeMap::new(),
             drawer,
-            timer,
+            time,
             http,
             console,
             network,
         }
     }
 
-    pub fn add_widget(&mut self, id: WidgetId, mut widget: Widget, config: WidgetConfig) {
+    pub fn add_widget(&mut self, id: WidgetId, mut widget: Widget) {
         widget.executor.set_ctx(Context {
             drawer: self.drawer.scoped(widget.placement),
-            time: self.timer.scoped(id),
+            time: self.time.scoped(id),
             http: self.http.scoped(id),
             console: self.console.scoped(id),
             network: self.network.scoped(id),
-            config,
+            config: widget.config.clone(),
         });
 
         self.widgets.insert(id, widget);
+    }
+
+    pub fn widgets(&self) -> &BTreeMap<WidgetId, Widget> {
+        &self.widgets
+    }
+
+    pub fn update_widget_config(&mut self, id: WidgetId, new_config: WidgetConfig) -> bool {
+        if let Some(widget) = self.widgets.get_mut(&id) {
+            // TODO: update context
+            widget.config = new_config;
+            true
+        } else {
+            false
+        }
     }
 
     pub fn remove_widget(&mut self, id: WidgetId) {
@@ -82,7 +95,7 @@ impl<D: GlobalDrawer, T: GlobalTime, H: GlobalHttpClient, C: GlobalConsole, N: G
     }
 
     pub fn handle_timer_events(&mut self, events: &mut BTreeMap<WidgetId, Vec<WidgetEvent>>) {
-        let expired = self.timer.poll();
+        let expired = self.time.poll();
         for (widget_id, timer_id) in expired {
             events
                 .entry(widget_id)

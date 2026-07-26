@@ -39,6 +39,8 @@ fn main() {
     // compilation, so no skip list is needed.
     build_widgets(&[]);
 
+    build_admin_ui(out_path);
+
     linker_be_nice();
 
     // make sure linkall.x is the last linker script (otherwise might cause problems with flip-link)
@@ -122,6 +124,73 @@ fn build_widgets(skip: &[&str]) {
     fs::write(dest_path.join("mod.rs"), mod_contents).unwrap();
 }
 
+fn build_admin_ui(out_path: &Path) {
+    let admin_ui_dir = Path::new("admin-ui");
+    if !admin_ui_dir.exists() {
+        return;
+    }
+
+    println!("cargo:rerun-if-changed=admin-ui/src");
+    println!("cargo:rerun-if-changed=admin-ui/public");
+    println!("cargo:rerun-if-changed=admin-ui/index.html");
+    println!("cargo:rerun-if-changed=admin-ui/package.json");
+    println!("cargo:rerun-if-changed=admin-ui/package-lock.json");
+    println!("cargo:rerun-if-changed=admin-ui/vite.config.ts");
+    println!("cargo:rerun-if-changed=admin-ui/tsconfig.json");
+    println!("cargo:rerun-if-changed=admin-ui/tsconfig.app.json");
+    println!("cargo:rerun-if-changed=admin-ui/tsconfig.node.json");
+
+    let path = env::var("PATH").unwrap_or_default();
+    let new_path = if path.contains("/opt/homebrew/bin") {
+        path
+    } else {
+        format!("{}:/opt/homebrew/bin", path)
+    };
+
+    let npm_cmd = if cfg!(target_os = "windows") {
+        "npm.cmd"
+    } else {
+        "npm"
+    };
+
+    if !admin_ui_dir.join("node_modules").exists() {
+        let install_status = Command::new(npm_cmd)
+            .env("PATH", &new_path)
+            .current_dir(admin_ui_dir)
+            .arg("ci")
+            .status()
+            .expect("failed to execute npm ci for admin-ui");
+
+        if !install_status.success() {
+            panic!("failed to install dependencies for admin-ui");
+        }
+    }
+
+    let status = Command::new(npm_cmd)
+        .env("PATH", &new_path)
+        .current_dir(admin_ui_dir)
+        .arg("run")
+        .arg("build")
+        .status()
+        .expect("failed to execute npm run build for admin-ui");
+
+    if !status.success() {
+        panic!("failed to build admin-ui");
+    }
+
+    let dist_index = admin_ui_dir.join("dist").join("index.html");
+    let dest_index = out_path.join("admin_ui_index.html");
+
+    fs::copy(&dist_index, &dest_index).unwrap_or_else(|err| {
+        panic!(
+            "failed to copy {} to {}: {}",
+            dist_index.display(),
+            dest_index.display(),
+            err
+        )
+    });
+}
+
 fn generate_config(out_path: &Path) {
     println!("cargo:rerun-if-changed=config.json");
 
@@ -201,11 +270,12 @@ fn generate_config(out_path: &Path) {
                  \x20               WidgetId::new({id}),\n\
                  \x20               Widget {{\n\
                  \x20                   placement: Rect::new(Point::new({x}, {y}), Size::new({w}, {h})),\n\
+                 \x20                   r#type: alloc::string::String::from({wtype:?}),\n\
+                 \x20                   config: WidgetConfig::new(),\n\
                  \x20                   executor: Box::new(WasmExecutor::new(compiled_widgets::{wasm})),\n\
                  \x20               }},\n\
-                 \x20               WidgetConfig::new(),\n\
                  \x20           );\n",
-                id = id, x = x, y = y, w = w, h = h, wasm = wasm,
+                id = id, x = x, y = y, w = w, h = h, wasm = wasm, wtype = wtype,
             ));
         } else {
             out.push_str(&format!(
@@ -225,11 +295,12 @@ fn generate_config(out_path: &Path) {
                  \x20               WidgetId::new({id}),\n\
                  \x20               Widget {{\n\
                  \x20                   placement: Rect::new(Point::new({x}, {y}), Size::new({w}, {h})),\n\
+                 \x20                   r#type: alloc::string::String::from({wtype:?}),\n\
+                 \x20                   config: {var},\n\
                  \x20                   executor: Box::new(WasmExecutor::new(compiled_widgets::{wasm})),\n\
                  \x20               }},\n\
-                 \x20               {var},\n\
                  \x20           );\n",
-                id = id, x = x, y = y, w = w, h = h, wasm = wasm, var = cfg_var,
+                id = id, x = x, y = y, w = w, h = h, wasm = wasm, var = cfg_var, wtype = wtype,
             ));
         }
     }
