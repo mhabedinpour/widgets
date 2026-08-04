@@ -32,3 +32,8 @@ widgets/node_modules
 widgets/*.wasm
 # Generated TS bindings (rebuilt by build/codegen on every cargo build)
 widgets/lib/bindings/
+
+# Generated content for filesystem image
+fs-image-content/admin/
+fs-image-content/widgets/
+fs-image-content/config.json

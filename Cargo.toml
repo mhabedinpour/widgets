@@ -61,11 +61,16 @@ u8g2-fonts = { version = "0.8", default-features = false }
 picoserve = { version = "0.19", features = ["embassy", "json"] }
 serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
 serde_json = { version = "1", default-features = false, features = ["alloc"] }
+esp-storage = {version =  "0.9", features = ["esp32s3"]}
+littlefs2 = { version = "0.8", features = ["c-stubs", "log-error", "log-all"] }
+embedded-storage = "0.3"
+heapless = "0.9.3"
 
 [build-dependencies]
 syn = { version = "3.0.2", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+littlefs2 = { version = "0.8", features = ["c-stubs"] }
 
 # For fine tuning these settings, please refer to https://doc.rust-lang.org/cargo/reference/profiles.html
 [profile.dev]

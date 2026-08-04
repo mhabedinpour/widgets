@@ -1,10 +1,12 @@
 use crate::console::LogData;
 use crate::drawer::{Baseline, ClearData, Color, Font, Point, TextAlignment, TextData};
+use crate::storage::FS;
 use crate::widget::WidgetEvent;
 use crate::widget::executor::{Context, Executor};
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::convert::TryFrom;
 use wasmi::{
     Caller, Config, Engine, Error, Linker, Module, Store, StoreLimits, StoreLimitsBuilder,
     TypedFunc,
@@ -191,17 +193,40 @@ pub struct WasmExecutor {
 impl WasmExecutor {
     /// Instantiate the widget module. Never fails: on error the executor
     /// logs the cause on first render and paints an error state instead.
-    pub fn new(wasm_binary: &[u8]) -> Self {
-        Self::with_modules(wasm_binary).unwrap_or_else(|err| {
-            let engine = Engine::new(&Config::default());
-            let store = Store::new(&engine, WasmCtx::new());
-            Self {
-                render_func: None,
-                store,
-                failed: true,
-                init_error: Some(format!("widget init failed: {}", err)),
+    pub fn new(fs: FS, path: &str) -> Self {
+        let mut wasm_binary = Vec::new();
+        let path_buf = littlefs2::path::PathBuf::try_from(path).expect("invalid path");
+        let res = fs
+            .open_file_and_then(&path_buf, |file| {
+                let len = file.len()?;
+                wasm_binary.resize(len, 0);
+                file.read(&mut wasm_binary)?;
+                Ok(())
+            })
+            .map_err(|e| format!("failed to open or read {}: {:?}", path, e));
+
+        match res {
+            Ok(_) => Self::with_modules(&wasm_binary).unwrap_or_else(|err| {
+                let engine = Engine::new(&Config::default());
+                let store = Store::new(&engine, WasmCtx::new());
+                Self {
+                    render_func: None,
+                    store,
+                    failed: true,
+                    init_error: Some(format!("widget {} init failed: {}", path, err)),
+                }
+            }),
+            Err(err) => {
+                let engine = Engine::new(&Config::default());
+                let store = Store::new(&engine, WasmCtx::new());
+                Self {
+                    render_func: None,
+                    store,
+                    failed: true,
+                    init_error: Some(err),
+                }
             }
-        })
+        }
     }
 
     fn with_modules(wasm_binary: &[u8]) -> Result<Self, Error> {

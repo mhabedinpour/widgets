@@ -8,22 +8,35 @@ use embassy_net::tcp::TcpSocket;
 use embassy_time::Instant;
 use log::{error, info};
 
+use super::{SystemStatusResponse, WidgetItem};
+use crate::admin::file::FileResponse;
+use crate::storage::FS;
 use crate::widget::manager::WidgetManager;
-use picoserve::Config as PicoserveConfig;
 use picoserve::response::IntoResponse;
 use picoserve::response::json::Json;
-use picoserve::routing::{get, post};
-
-use super::{SystemStatusResponse, WidgetItem};
+use picoserve::routing::{PathRouter, get, post};
+use picoserve::{Config as PicoserveConfig, Router};
 
 pub struct Server {
     manager: Rc<RefCell<WidgetManager>>,
     stack: Stack<'static>,
+    fs: FS,
 }
 
 impl Server {
-    pub fn new(stack: Stack<'static>, manager: Rc<RefCell<WidgetManager>>) -> Self {
-        Self { stack, manager }
+    pub fn new(stack: Stack<'static>, fs: FS, manager: Rc<RefCell<WidgetManager>>) -> Self {
+        Self { stack, fs, manager }
+    }
+
+    fn router(&self) -> Router<impl PathRouter<()>> {
+        Router::new()
+            .route(
+                "/",
+                get(|| FileResponse::from(self.fs.clone(), "/admin/index.html")),
+            )
+            .route("/api/status", get(|| self.handle_status()))
+            .route("/api/widgets", get(|| self.handle_get_widgets()))
+            .route("/api/reboot", post(|| self.handle_reboot()))
     }
 
     async fn handle_status(&self) -> impl IntoResponse {
@@ -75,21 +88,11 @@ impl Server {
     }
 }
 
-static ADMIN_UI_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/admin_ui_index.html"));
-
 #[embassy_executor::task]
 pub async fn admin_api_task(server: Server) -> ! {
     info!("Starting Picoserve REST API server & Admin Dashboard on port 8080...");
 
-    let app = picoserve::Router::new()
-        .route(
-            "/",
-            picoserve::routing::get_service(picoserve::response::File::html(ADMIN_UI_HTML)),
-        )
-        .route("/api/status", get(|| server.handle_status()))
-        .route("/api/widgets", get(|| server.handle_get_widgets()))
-        .route("/api/reboot", post(|| server.handle_reboot()));
-
+    let app = server.router();
     let config = PicoserveConfig::new(picoserve::Timeouts::default());
 
     let mut rx_buffer = [0u8; 2048];

@@ -1,9 +1,15 @@
 mod codegen;
+mod image;
 
 use std::env;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+
+use littlefs2::{
+    fs::{Allocation, Filesystem},
+    path::PathBuf as LfsPathBuf,
+};
 
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
@@ -39,7 +45,8 @@ fn main() {
     // compilation, so no skip list is needed.
     build_widgets(&[]);
 
-    build_admin_ui(out_path);
+    build_admin_ui();
+    build_fs_image();
 
     linker_be_nice();
 
@@ -53,8 +60,8 @@ fn build_widgets(skip: &[&str]) {
         return;
     }
 
-    let out_dir = env::var("OUT_DIR").unwrap();
-    let dest_path = Path::new(&out_dir).join("widgets");
+    let root = env::current_dir().unwrap();
+    let dest_path = root.join("fs-image-content/widgets");
     fs::create_dir_all(&dest_path).unwrap();
 
     let entries = fs::read_dir(widgets_dir).unwrap();
@@ -102,29 +109,9 @@ fn build_widgets(skip: &[&str]) {
             }
         }
     }
-
-    // Generate a mod.rs file to include all widgets
-    let mut mod_contents = String::new();
-    let entries = fs::read_dir(widgets_dir).unwrap();
-    for entry in entries {
-        let entry = entry.unwrap();
-        let path = entry.path();
-        if path.extension().map_or(false, |ext| ext == "ts") {
-            let name = path.file_stem().unwrap().to_str().unwrap();
-            if skip.contains(&name) {
-                continue;
-            }
-            mod_contents.push_str(&format!(
-                "pub const {}: &[u8] = include_bytes!(\"{}.wasm\");\n",
-                name.to_uppercase(),
-                name
-            ));
-        }
-    }
-    fs::write(dest_path.join("mod.rs"), mod_contents).unwrap();
 }
 
-fn build_admin_ui(out_path: &Path) {
+fn build_admin_ui() {
     let admin_ui_dir = Path::new("admin-ui");
     if !admin_ui_dir.exists() {
         return;
@@ -159,7 +146,7 @@ fn build_admin_ui(out_path: &Path) {
             .current_dir(admin_ui_dir)
             .arg("ci")
             .status()
-            .expect("failed to execute npm ci for admin-ui");
+            .expect("failed to execute npm code ci for admin-ui");
 
         if !install_status.success() {
             panic!("failed to install dependencies for admin-ui");
@@ -179,7 +166,9 @@ fn build_admin_ui(out_path: &Path) {
     }
 
     let dist_index = admin_ui_dir.join("dist").join("index.html");
-    let dest_index = out_path.join("admin_ui_index.html");
+    let dest_dir = Path::new("fs-image-content/admin");
+    fs::create_dir_all(dest_dir).unwrap();
+    let dest_index = dest_dir.join("index.html");
 
     fs::copy(&dist_index, &dest_index).unwrap_or_else(|err| {
         panic!(
@@ -189,6 +178,49 @@ fn build_admin_ui(out_path: &Path) {
             err
         )
     });
+}
+
+fn build_fs_image() {
+    let fs_image_content = Path::new("fs-image-content");
+    if !fs_image_content.exists() {
+        fs::create_dir_all(fs_image_content).unwrap();
+    }
+
+    println!("cargo:rerun-if-changed=fs-image-content");
+    println!("cargo:rerun-if-changed=src/storage/mod.rs");
+    println!("cargo:rerun-if-changed=config.json");
+
+    fs::copy("config.json", fs_image_content.join("config.json")).unwrap();
+
+    let image_size = image::BLOCK_SIZE * image::BLOCK_COUNT;
+    let image_path = Path::new("target/littlefs.bin");
+
+    // Ensure target directory exists
+    if let Some(parent) = image_path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+
+    let mut storage = image::RamStorage {
+        data: vec![0xff; image_size],
+    };
+
+    let mut alloc = Allocation::new();
+
+    Filesystem::format(&mut storage).expect("failed to format littlefs");
+
+    Filesystem::mount(&mut alloc, &mut storage)
+        .and_then(|lfs| {
+            image::add_files_recursive(&lfs, fs_image_content, &LfsPathBuf::try_from("/").unwrap())
+        })
+        .expect("failed to populate littlefs image");
+
+    fs::write(image_path, storage.data).expect("failed to write littlefs image");
+
+    println!(
+        "cargo:info=Successfully created littlefs image ({} bytes) at {}",
+        image_size,
+        image_path.display()
+    );
 }
 
 fn generate_config(out_path: &Path) {
@@ -203,16 +235,6 @@ fn generate_config(out_path: &Path) {
         serde_json::from_str(&config_str).expect("config.json is not valid JSON");
 
     let mut out = String::from("// Auto-generated from config.json — do not edit.\n\n");
-
-    // ── WiFi ──────────────────────────────────────────────────────────────────
-    let ssid = cfg["wifi"]["ssid"].as_str().unwrap_or("");
-    let pass = cfg["wifi"]["password"].as_str().unwrap_or("");
-    out.push_str(&format!("const WIFI_SSID: &str = {:?};\n", ssid));
-    out.push_str(&format!("const WIFI_PASSWORD: &str = {:?};\n\n", pass));
-
-    // ── Display ───────────────────────────────────────────────────────────────
-    let freq = cfg["display"]["freq_mhz"].as_u64().unwrap_or(20);
-    out.push_str(&format!("const DISPLAY_FREQ_MHZ: u32 = {};\n\n", freq));
 
     // Hub75 pin macro — expands to a Hub75Pins16 { ... } expression.
     // Types are resolved at the call site (all needed imports are in main.rs).
@@ -234,86 +256,13 @@ fn generate_config(out_path: &Path) {
     }
     out.push_str("        }\n");
     out.push_str("    };\n");
-    out.push_str("}\n\n");
-
-    // Widget registration macro — expands to a series of manager.add_widget(…) calls.
-    let widgets = cfg["widgets"]
-        .as_array()
-        .expect("config.json: widgets must be an array");
-
-    out.push_str("macro_rules! add_widgets {\n");
-    out.push_str("    ($manager:ident) => {\n");
-    out.push_str("        {\n");
-
-    for widget in widgets {
-        let id = widget["id"].as_u64().expect("widget missing id");
-        let wtype = widget["type"].as_str().expect("widget missing type");
-        let x = widget["x"].as_u64().unwrap_or(0);
-        let y = widget["y"].as_u64().unwrap_or(0);
-        let w = widget["width"].as_u64().expect("widget missing width");
-        let h = widget["height"].as_u64().expect("widget missing height");
-        let wasm = wtype.to_uppercase(); // "time" -> "TIME"
-
-        let cfg_entries: Vec<(String, String)> = widget["config"]
-            .as_object()
-            .map(|m| {
-                m.iter()
-                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let cfg_var = format!("_cfg_{}", id);
-        if cfg_entries.is_empty() {
-            out.push_str(&format!(
-                "            $manager.add_widget(\n\
-                 \x20               WidgetId::new({id}),\n\
-                 \x20               Widget {{\n\
-                 \x20                   placement: Rect::new(Point::new({x}, {y}), Size::new({w}, {h})),\n\
-                 \x20                   r#type: alloc::string::String::from({wtype:?}),\n\
-                 \x20                   config: WidgetConfig::new(),\n\
-                 \x20                   executor: Box::new(WasmExecutor::new(compiled_widgets::{wasm})),\n\
-                 \x20               }},\n\
-                 \x20           );\n",
-                id = id, x = x, y = y, w = w, h = h, wasm = wasm, wtype = wtype,
-            ));
-        } else {
-            out.push_str(&format!(
-                "            let mut {} = WidgetConfig::new();\n",
-                cfg_var
-            ));
-            for (k, v) in &cfg_entries {
-                out.push_str(&format!(
-                    "            {var}.insert({k:?}.into(), {v:?}.into());\n",
-                    var = cfg_var,
-                    k = k,
-                    v = v,
-                ));
-            }
-            out.push_str(&format!(
-                "            $manager.add_widget(\n\
-                 \x20               WidgetId::new({id}),\n\
-                 \x20               Widget {{\n\
-                 \x20                   placement: Rect::new(Point::new({x}, {y}), Size::new({w}, {h})),\n\
-                 \x20                   r#type: alloc::string::String::from({wtype:?}),\n\
-                 \x20                   config: {var},\n\
-                 \x20                   executor: Box::new(WasmExecutor::new(compiled_widgets::{wasm})),\n\
-                 \x20               }},\n\
-                 \x20           );\n",
-                id = id, x = x, y = y, w = w, h = h, wasm = wasm, var = cfg_var, wtype = wtype,
-            ));
-        }
-    }
-
-    out.push_str("        }\n");
-    out.push_str("    };\n");
     out.push_str("}\n");
 
     fs::write(out_path.join("config.rs"), &out).unwrap();
 }
 
 fn linker_be_nice() {
-    let args: Vec<String> = std::env::args().collect();
+    let args: Vec<String> = env::args().collect();
     if args.len() > 1 {
         let kind = &args[1];
         let what = &args[2];
@@ -373,6 +322,6 @@ fn linker_be_nice() {
 
     println!(
         "cargo:rustc-link-arg=-Wl,--error-handling-script={}",
-        std::env::current_exe().unwrap().display()
+        env::current_exe().unwrap().display()
     );
 }

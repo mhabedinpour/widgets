@@ -15,6 +15,7 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::rc::Rc;
 use core::cell::RefCell;
+use core::convert::TryFrom;
 use embassy_executor::Spawner;
 use embassy_time::Timer;
 use esp_backtrace as _;
@@ -29,9 +30,8 @@ use esp_hub75::Hub75Pins16;
 use log::info;
 use static_cell::StaticCell;
 use widgets::admin::server::{Server, admin_api_task};
-use widgets::backend::lcd::{LCDCAM64x64, LCDCAM64x64Flusher};
+use widgets::backend::lcd::{LCDCAM64x64, LCDCAM64x64Drawer, LCDCAM64x64Flusher};
 use widgets::boot_screen;
-use widgets::compiled_widgets;
 use widgets::console::ConsoleLogger;
 use widgets::drawer::{Point, Rect, Size};
 use widgets::http::HttpService;
@@ -39,7 +39,7 @@ use widgets::network::NetworkService;
 use widgets::time::timer::TimeService;
 use widgets::widget::executor::wasm::WasmExecutor;
 use widgets::widget::manager::WidgetManager;
-use widgets::widget::{Widget, WidgetConfig, WidgetId};
+use widgets::widget::{Widget, WidgetId};
 
 use embassy_net::{Config as NetConfig, DhcpConfig, Runner, StackResources};
 use esp_radio::wifi::{Config as WifiConfig, WifiController, sta::StationConfig};
@@ -81,14 +81,17 @@ async fn net_task(mut runner: Runner<'static, esp_radio::wifi::Interface<'static
 
 #[embassy_executor::task]
 #[allow(clippy::large_stack_frames)]
-async fn connection_task(mut controller: WifiController<'static>) {
+async fn connection_task(
+    mut controller: WifiController<'static>,
+    wifi_config: widgets::config::WifiConfig,
+) {
     loop {
         if !controller.is_connected() {
             info!("Connecting to Wi-Fi...");
             let config = WifiConfig::Station(
                 StationConfig::default()
-                    .with_ssid(WIFI_SSID)
-                    .with_password(alloc::string::String::from(WIFI_PASSWORD)),
+                    .with_ssid(wifi_config.ssid.as_str())
+                    .with_password(wifi_config.password.clone()),
             );
             if let Err(e) = controller.set_config(&config) {
                 log::error!("Failed to set Wi-Fi config: {:?}", e);
@@ -121,15 +124,91 @@ async fn connection_task(mut controller: WifiController<'static>) {
     }
 }
 
+fn load_config(file_system: &widgets::storage::FS) -> widgets::config::Config {
+    let mut config_bytes = alloc::vec::Vec::new();
+    file_system
+        .open_file_and_then(
+            &littlefs2::path::PathBuf::try_from("./config.json").unwrap(),
+            |file| {
+                let len = file.len()?;
+                config_bytes.resize(len, 0);
+                file.read(&mut config_bytes)?;
+                Ok(())
+            },
+        )
+        .expect("Failed to read config.json");
+
+    serde_json::from_slice(&config_bytes).expect("Failed to parse config.json")
+}
+
+fn setup_network(
+    spawner: Spawner,
+    wifi: esp_hal::peripherals::WIFI<'static>,
+    wifi_config: widgets::config::WifiConfig,
+) -> embassy_net::Stack<'static> {
+    let (wifi_controller, interfaces) = esp_radio::wifi::new(wifi, Default::default())
+        .expect("Failed to initialize Wi-Fi controller");
+
+    let rng = esp_hal::rng::Rng::new();
+    let seed = (rng.random() as u64) << 32 | (rng.random() as u64);
+    let (stack, runner) = embassy_net::new(
+        interfaces.station,
+        NetConfig::dhcpv4(DhcpConfig::default()),
+        STACK_NET.init(StackResources::<8>::new()),
+        seed,
+    );
+
+    spawner.spawn(net_task(runner).unwrap());
+    spawner.spawn(connection_task(wifi_controller, wifi_config).unwrap());
+
+    stack
+}
+
+fn init_display(
+    lcd_cam: esp_hal::peripherals::LCD_CAM<'static>,
+    dma_ch0: esp_hal::peripherals::DMA_CH0<'static>,
+    cpu_ctrl: CPU_CTRL,
+    sw_int: SoftwareInterrupt<'static, 1>,
+    pins: Hub75Pins16<'static>,
+    display_config: &widgets::config::DisplayConfig,
+) -> LCDCAM64x64Drawer {
+    let freq = Rate::from_mhz(display_config.freq_mhz);
+    let LCDCAM64x64(flusher, drawer) = LCDCAM64x64::new(pins, lcd_cam, dma_ch0, freq);
+    init_display_flusher(cpu_ctrl, sw_int, flusher);
+    drawer
+}
+
+fn register_widgets(
+    mgr: &mut WidgetManager,
+    app_config: &widgets::config::Config,
+    file_system: &widgets::storage::FS,
+) {
+    for widget in &app_config.widgets {
+        let wasm_path = alloc::format!("/widgets/{}.wasm", widget.r#type);
+        mgr.add_widget(
+            WidgetId::new(widget.id),
+            Widget {
+                placement: Rect::new(
+                    Point::new(widget.x, widget.y),
+                    Size::new(widget.width, widget.height),
+                ),
+                r#type: widget.r#type.clone(),
+                config: widget.config.clone(),
+                executor: Box::new(WasmExecutor::new(file_system.clone(), &wasm_path)),
+            },
+        );
+    }
+}
+
 #[esp_rtos::main]
 #[allow(clippy::large_stack_frames)]
 async fn main(spawner: Spawner) -> ! {
     esp_println::logger::init_logger_from_env();
 
-    let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
-    let peripherals = esp_hal::init(config);
+    let hal_config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
+    let peripherals = esp_hal::init(hal_config);
 
-    esp_alloc::heap_allocator!(size: 96 * 1024);
+    esp_alloc::heap_allocator!(size: 90 * 1024);
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 64000);
     esp_alloc::psram_allocator!(peripherals.PSRAM, esp_hal::psram);
 
@@ -144,32 +223,21 @@ async fn main(spawner: Spawner) -> ! {
 
     info!("Embassy initialized!");
 
-    let (wifi_controller, interfaces) = esp_radio::wifi::new(peripherals.WIFI, Default::default())
-        .expect("Failed to initialize Wi-Fi controller");
-
-    let rng = esp_hal::rng::Rng::new();
-    let seed = (rng.random() as u64) << 32 | (rng.random() as u64);
-    let (stack, runner) = embassy_net::new(
-        interfaces.station,
-        NetConfig::dhcpv4(DhcpConfig::default()),
-        STACK_NET.init(StackResources::<8>::new()),
-        seed,
-    );
-
-    spawner.spawn(net_task(runner).unwrap());
-    spawner.spawn(connection_task(wifi_controller).unwrap());
+    let file_system = widgets::storage::init(peripherals.FLASH);
+    let app_config = load_config(&file_system);
 
     // Init display early so we can show a boot screen while Wi-Fi connects.
     let pins = hub75_pins!(peripherals);
-    let freq = Rate::from_mhz(DISPLAY_FREQ_MHZ);
-    let backend = LCDCAM64x64::new(pins, peripherals.LCD_CAM, peripherals.DMA_CH0, freq);
-    let drawer = backend.1;
-    init_display_flusher(
+    let drawer = init_display(
+        peripherals.LCD_CAM,
+        peripherals.DMA_CH0,
         peripherals.CPU_CTRL,
         sw_interrupt.software_interrupt1,
-        backend.0,
+        pins,
+        &app_config.display,
     );
 
+    let stack = setup_network(spawner, peripherals.WIFI, app_config.wifi.clone());
     // Animate while waiting for DHCP.
     info!("Waiting for Wi-Fi DHCP...");
     boot_screen::run(&drawer, stack).await;
@@ -190,20 +258,66 @@ async fn main(spawner: Spawner) -> ! {
         Box::new(ConsoleLogger::new()),
         Box::new(NetworkService::new(stack)),
     );
-
     let manager = Rc::new(RefCell::new(raw_manager));
-
     {
         let mut mgr = manager.borrow_mut();
-        add_widgets!(mgr);
-        mgr.render();
+        register_widgets(&mut mgr, &app_config, &file_system);
     }
+    manager.borrow_mut().render();
 
-    spawner.spawn(admin_api_task(Server::new(stack, manager.clone())).unwrap());
+    spawner
+        .spawn(admin_api_task(Server::new(stack, file_system.clone(), manager.clone())).unwrap());
 
     loop {
         wdt0.feed();
         manager.borrow_mut().poll_events();
         Timer::after_millis(10).await;
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn strspn(
+    cs: *const core::ffi::c_char,
+    ct: *const core::ffi::c_char,
+) -> usize {
+    let mut p = cs;
+    unsafe {
+        while *p != 0 {
+            let mut r = ct;
+            let mut found = false;
+            while *r != 0 {
+                if *p == *r {
+                    found = true;
+                    break;
+                }
+                r = r.add(1);
+            }
+            if !found {
+                break;
+            }
+            p = p.add(1);
+        }
+        p.offset_from(cs) as usize
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn strcspn(
+    cs: *const core::ffi::c_char,
+    ct: *const core::ffi::c_char,
+) -> usize {
+    let mut p = cs;
+    unsafe {
+        while *p != 0 {
+            let mut r = ct;
+            while *r != 0 {
+                if *p == *r {
+                    return p.offset_from(cs) as usize;
+                }
+                r = r.add(1);
+            }
+            p = p.add(1);
+        }
+        p.offset_from(cs) as usize
     }
 }

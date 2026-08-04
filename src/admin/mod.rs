@@ -1,3 +1,4 @@
+mod file;
 pub mod server;
 
 use alloc::collections::BTreeMap;
