@@ -8,13 +8,15 @@ use embassy_net::tcp::TcpSocket;
 use embassy_time::Instant;
 use log::{error, info};
 
-use super::{SystemStatusResponse, WidgetItem};
+use super::SystemStatusResponse;
 use crate::admin::file::FileResponse;
+use crate::config::WidgetEntry;
 use crate::storage::FS;
+use crate::widget::WidgetId;
 use crate::widget::manager::WidgetManager;
 use picoserve::response::IntoResponse;
 use picoserve::response::json::Json;
-use picoserve::routing::{PathRouter, get, post};
+use picoserve::routing::{PathRouter, get, parse_path_segment, post, put};
 use picoserve::{Config as PicoserveConfig, Router};
 
 pub struct Server {
@@ -32,11 +34,24 @@ impl Server {
         Router::new()
             .route(
                 "/",
-                get(|| FileResponse::from(self.fs.clone(), "/admin/index.html")),
+                get(move || FileResponse::from(self.fs.clone(), "/admin/index.html")),
             )
-            .route("/api/status", get(|| self.handle_status()))
-            .route("/api/widgets", get(|| self.handle_get_widgets()))
-            .route("/api/reboot", post(|| self.handle_reboot()))
+            .route("/api/status", get(move || self.handle_status()))
+            .route(
+                "/api/widgets",
+                get(move || self.handle_get_widgets())
+                    .post(move |Json(item): Json<WidgetEntry>| self.handle_add_widget(item)),
+            )
+            .route(
+                ("/api/widgets", parse_path_segment::<usize>()),
+                put({
+                    move |id: usize, Json(item): Json<WidgetEntry>| {
+                        self.handle_replace_widget(id, item)
+                    }
+                })
+                .delete(move |id: usize| self.handle_remove_widget(id)),
+            )
+            .route("/api/reboot", post(move || self.handle_reboot()))
     }
 
     async fn handle_status(&self) -> impl IntoResponse {
@@ -69,17 +84,40 @@ impl Server {
             .borrow()
             .widgets()
             .iter()
-            .map(|(id, w)| WidgetItem {
-                id: id.0,
-                r#type: w.r#type.clone(),
-                x: w.placement.origin.x as i32,
-                y: w.placement.origin.y as i32,
-                width: w.placement.size.width,
-                height: w.placement.size.height,
-                config: w.config.clone(),
-            })
-            .collect::<Vec<_>>();
+            .map(|(_id, w)| w.into())
+            .collect::<Vec<WidgetEntry>>();
         Json(items)
+    }
+
+    async fn handle_add_widget(&self, item: WidgetEntry) -> impl IntoResponse {
+        let mut manager = self.manager.borrow_mut();
+
+        let max_id = manager.widgets().keys().map(|id| id.0).max().unwrap_or(0);
+        let id = WidgetId(max_id + 1);
+        let mut widget = item.as_widget(self.fs.clone());
+        widget.id = id;
+
+        manager.add_widget(widget);
+        manager.flush();
+        Json(id.0)
+    }
+
+    async fn handle_remove_widget(&self, id: usize) -> impl IntoResponse {
+        let mut manager = self.manager.borrow_mut();
+        manager.remove_widget(WidgetId(id));
+        manager.flush();
+        Json("ok")
+    }
+
+    async fn handle_replace_widget(&self, id: usize, item: WidgetEntry) -> impl IntoResponse {
+        let mut manager = self.manager.borrow_mut();
+
+        let mut widget = item.as_widget(self.fs.clone());
+        widget.id = WidgetId(id);
+
+        manager.replace_widget(widget);
+        manager.flush();
+        Json("ok")
     }
 
     async fn handle_reboot(&self) -> Json<&'static str> {
@@ -88,7 +126,7 @@ impl Server {
     }
 }
 
-#[embassy_executor::task]
+#[embassy_executor::task(pool_size = 1)]
 pub async fn admin_api_task(server: Server) -> ! {
     info!("Starting Picoserve REST API server & Admin Dashboard on port 8080...");
 

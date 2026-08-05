@@ -35,6 +35,7 @@ impl WidgetId {
 }
 
 pub struct Widget {
+    pub id: WidgetId,
     pub placement: Rect,
     pub r#type: String,
     pub config: WidgetConfig,

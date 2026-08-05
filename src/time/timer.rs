@@ -106,6 +106,10 @@ impl TimerState {
         });
     }
 
+    fn remove_widget(&mut self, widget_id: WidgetId) {
+        self.active.retain(|k, _| k.widget_id != widget_id);
+    }
+
     fn poll(&mut self) -> Vec<(WidgetId, TimerId)> {
         let now = Instant::now();
         let mut expired = Vec::new();
@@ -245,5 +249,11 @@ impl Time for WidgetTime {
 
     fn get_last_sync(&mut self) -> i64 {
         self.time_sync.get_last_sync_unix().unwrap_or(-1)
+    }
+}
+
+impl Drop for WidgetTime {
+    fn drop(&mut self) {
+        self.state.borrow_mut().remove_widget(self.widget_id);
     }
 }

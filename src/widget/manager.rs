@@ -1,12 +1,15 @@
+use crate::config::Config;
 use crate::console::GlobalConsole;
 use crate::drawer::GlobalDrawer;
 use crate::http::GlobalHttpClient;
 use crate::network::GlobalNetwork;
+use crate::storage::FS;
 use crate::time::GlobalTime;
 use crate::widget::executor::Context;
-use crate::widget::{Widget, WidgetConfig, WidgetEvent, WidgetId};
+use crate::widget::{Widget, WidgetEvent, WidgetId};
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 pub struct WidgetManager {
@@ -16,6 +19,8 @@ pub struct WidgetManager {
     http: Box<dyn GlobalHttpClient>,
     console: Box<dyn GlobalConsole>,
     network: Box<dyn GlobalNetwork>,
+    fs: FS,
+    config: Arc<Config>,
 }
 
 impl WidgetManager {
@@ -25,6 +30,8 @@ impl WidgetManager {
         http: Box<dyn GlobalHttpClient>,
         console: Box<dyn GlobalConsole>,
         network: Box<dyn GlobalNetwork>,
+        fs: FS,
+        config: Arc<Config>,
     ) -> Self {
         Self {
             widgets: BTreeMap::new(),
@@ -33,38 +40,44 @@ impl WidgetManager {
             http,
             console,
             network,
+            fs,
+            config,
         }
     }
 
-    pub fn add_widget(&mut self, id: WidgetId, mut widget: Widget) {
+    pub fn add_widget(&mut self, mut widget: Widget) {
         widget.executor.set_ctx(Context {
             drawer: self.drawer.scoped(widget.placement),
-            time: self.time.scoped(id),
-            http: self.http.scoped(id),
-            console: self.console.scoped(id),
-            network: self.network.scoped(id),
+            time: self.time.scoped(widget.id),
+            http: self.http.scoped(widget.id),
+            console: self.console.scoped(widget.id),
+            network: self.network.scoped(widget.id),
             config: widget.config.clone(),
         });
 
-        self.widgets.insert(id, widget);
+        self.widgets.insert(widget.id, widget);
     }
 
     pub fn widgets(&self) -> &BTreeMap<WidgetId, Widget> {
         &self.widgets
     }
 
-    pub fn update_widget_config(&mut self, id: WidgetId, new_config: WidgetConfig) -> bool {
-        if let Some(widget) = self.widgets.get_mut(&id) {
-            // TODO: update context
-            widget.config = new_config;
-            true
-        } else {
-            false
-        }
-    }
-
     pub fn remove_widget(&mut self, id: WidgetId) {
         self.widgets.remove(&id);
+    }
+
+    pub fn replace_widget(&mut self, widget: Widget) {
+        self.remove_widget(widget.id);
+        self.add_widget(widget);
+    }
+
+    pub fn flush(&mut self) {
+        self.config
+            .set_widgets(self.widgets.iter().map(|(_id, w)| w.into()).collect());
+
+        if let Err(e) = self.config.save(self.fs.clone()) {
+            log::error!("Failed to save config: {:?}", e);
+        }
     }
 
     pub fn render(&mut self) {
@@ -82,11 +95,9 @@ impl WidgetManager {
         let flush = events.len() > 0;
 
         for (id, event_list) in events {
-            self.widgets
-                .get_mut(&id)
-                .unwrap()
-                .executor
-                .render(Some(event_list));
+            if let Some(widget) = self.widgets.get_mut(&id) {
+                widget.executor.render(Some(event_list));
+            }
         }
 
         if flush {

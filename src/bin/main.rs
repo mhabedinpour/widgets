@@ -15,7 +15,6 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::rc::Rc;
 use core::cell::RefCell;
-use core::convert::TryFrom;
 use embassy_executor::Spawner;
 use embassy_time::Timer;
 use esp_backtrace as _;
@@ -33,16 +32,14 @@ use widgets::admin::server::{Server, admin_api_task};
 use widgets::backend::lcd::{LCDCAM64x64, LCDCAM64x64Drawer, LCDCAM64x64Flusher};
 use widgets::boot_screen;
 use widgets::console::ConsoleLogger;
-use widgets::drawer::{Point, Rect, Size};
 use widgets::http::HttpService;
 use widgets::network::NetworkService;
 use widgets::time::timer::TimeService;
-use widgets::widget::executor::wasm::WasmExecutor;
 use widgets::widget::manager::WidgetManager;
-use widgets::widget::{Widget, WidgetId};
 
 use embassy_net::{Config as NetConfig, DhcpConfig, Runner, StackResources};
 use esp_radio::wifi::{Config as WifiConfig, WifiController, sta::StationConfig};
+use widgets::config::Config;
 use widgets::time_sync::sntp::{TimeSyncService, time_sync_task};
 
 // Generated from config.json at build time.
@@ -124,23 +121,6 @@ async fn connection_task(
     }
 }
 
-fn load_config(file_system: &widgets::storage::FS) -> widgets::config::Config {
-    let mut config_bytes = alloc::vec::Vec::new();
-    file_system
-        .open_file_and_then(
-            &littlefs2::path::PathBuf::try_from("./config.json").unwrap(),
-            |file| {
-                let len = file.len()?;
-                config_bytes.resize(len, 0);
-                file.read(&mut config_bytes)?;
-                Ok(())
-            },
-        )
-        .expect("Failed to read config.json");
-
-    serde_json::from_slice(&config_bytes).expect("Failed to parse config.json")
-}
-
 fn setup_network(
     spawner: Spawner,
     wifi: esp_hal::peripherals::WIFI<'static>,
@@ -180,23 +160,11 @@ fn init_display(
 
 fn register_widgets(
     mgr: &mut WidgetManager,
-    app_config: &widgets::config::Config,
+    app_config: &Config,
     file_system: &widgets::storage::FS,
 ) {
-    for widget in &app_config.widgets {
-        let wasm_path = alloc::format!("/widgets/{}.wasm", widget.r#type);
-        mgr.add_widget(
-            WidgetId::new(widget.id),
-            Widget {
-                placement: Rect::new(
-                    Point::new(widget.x, widget.y),
-                    Size::new(widget.width, widget.height),
-                ),
-                r#type: widget.r#type.clone(),
-                config: widget.config.clone(),
-                executor: Box::new(WasmExecutor::new(file_system.clone(), &wasm_path)),
-            },
-        );
+    for widget in app_config.widgets.borrow().iter() {
+        mgr.add_widget(widget.as_widget(file_system.clone()));
     }
 }
 
@@ -224,7 +192,7 @@ async fn main(spawner: Spawner) -> ! {
     info!("Embassy initialized!");
 
     let file_system = widgets::storage::init(peripherals.FLASH);
-    let app_config = load_config(&file_system);
+    let app_config = Config::load(file_system.clone()).expect("failed to load config");
 
     // Init display early so we can show a boot screen while Wi-Fi connects.
     let pins = hub75_pins!(peripherals);
@@ -257,6 +225,8 @@ async fn main(spawner: Spawner) -> ! {
         Box::new(HttpService::new(spawner, stack)),
         Box::new(ConsoleLogger::new()),
         Box::new(NetworkService::new(stack)),
+        file_system.clone(),
+        app_config.clone(),
     );
     let manager = Rc::new(RefCell::new(raw_manager));
     {

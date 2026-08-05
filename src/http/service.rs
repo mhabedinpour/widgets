@@ -9,6 +9,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::fmt::Write as FmtWrite;
+use core::sync::atomic::{AtomicBool, Ordering};
 use critical_section::Mutex;
 use embassy_executor::Spawner;
 use embassy_net::Stack;
@@ -140,12 +141,14 @@ impl GlobalHttpClient for HttpService {
 
     fn scoped(&self, widget_id: WidgetId) -> Box<dyn Http> {
         let channel = Arc::new(Channel::new());
+        let stopped = Arc::new(AtomicBool::new(false));
         self.spawner.spawn(
             widget_http_task(
                 self.stack,
                 widget_id,
                 Arc::clone(&channel),
                 Arc::clone(&self.completed),
+                stopped.clone(),
             )
             .unwrap(),
         );
@@ -154,6 +157,7 @@ impl GlobalHttpClient for HttpService {
             completed: Arc::clone(&self.completed),
             widget_id,
             next_id: 0,
+            stopped,
         })
     }
 }
@@ -165,6 +169,7 @@ impl GlobalHttpClient for HttpService {
 pub struct WidgetHttpClient {
     channel: Arc<HttpChannel>,
     completed: Arc<CompletedQueue>,
+    stopped: Arc<AtomicBool>,
     widget_id: WidgetId,
     next_id: u32,
 }
@@ -195,6 +200,8 @@ impl Http for WidgetHttpClient {
 
 impl Drop for WidgetHttpClient {
     fn drop(&mut self) {
+        self.stopped.store(true, Ordering::Relaxed);
+
         // Drain pending requests — no one will ever receive their responses.
         // This guarantees there is always room for the stop sentinel below.
         while self.channel.try_receive().is_ok() {}
@@ -390,6 +397,7 @@ async fn widget_http_task(
     widget_id: WidgetId,
     channel: Arc<HttpChannel>,
     completed: Arc<CompletedQueue>,
+    stopped: Arc<AtomicBool>,
 ) {
     let mut tcp_rx = Box::new([0u8; TCP_BUF_SIZE]);
     let mut tcp_tx = Box::new([0u8; TCP_BUF_SIZE]);
@@ -403,6 +411,9 @@ async fn widget_http_task(
             // None is the stop sentinel sent by WidgetHttpClient::drop.
             break;
         };
+        if stopped.load(Ordering::Relaxed) {
+            break;
+        }
 
         let (headers, body, error) = match execute_request(
             stack,
@@ -420,6 +431,10 @@ async fn widget_http_task(
                 (None, None, Some(e))
             }
         };
+
+        if stopped.load(Ordering::Relaxed) {
+            break;
+        }
 
         completed.push((
             widget_id,

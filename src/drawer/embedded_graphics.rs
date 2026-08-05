@@ -445,3 +445,11 @@ impl<T: DrawTarget<Color = Rgb888>> EmbeddedGraphicsDrawer<T> {
         }
     }
 }
+
+impl<T: DrawTarget<Color = Rgb888>> Drop for EmbeddedGraphicsDrawer<T> {
+    fn drop(&mut self) {
+        self.execute_clear(ClearData {
+            color: Color::BLACK,
+        });
+    }
+}
