@@ -22,10 +22,11 @@ With WASM, each widget is an isolated module with its own memory and a well-defi
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│  config.json  ──▶  build script  ──▶  compiled firmware  │
-│  widgets/*.ts ──▶  asc (WASM)    ──┘                     │
-└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  config.json    ──┐                                              │
+│  widgets/*.ts   ──┼─▶ build script ─▶ fs-image-content/ ─▶ image │
+│  admin-ui/      ──┘                                              │
+└──────────────────────────────────────────────────────────────────┘
 
                     Core 0 (Embassy async)
 ┌───────────────────────────────────────────────────────────────┐
@@ -36,13 +37,13 @@ With WASM, each widget is an isolated module with its own memory and a well-defi
 │  └─────┬─────┘      └─────┬─────┘      └─────┬─────┘          │
 │        └──────────────────┴──────────────────┘                │
 │                       host bindings                           │
-│        ┌──────────┐ ┌──────┐ ┌──────┐ ┌──────┐                │
-│        │  Drawer  │ │ Time │ │ HTTP │ │ Net  │                │
-│        └─────┬────┘ └──────┘ └──────┘ └──────┘                │
-└──────────────┼────────────────────────────────────────────────┘
-               │ flush()                  events (timer / HTTP)
-               ▼
-          Framebuffer
+│        ┌──────────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌─────────┐    │
+│        │  Drawer  │ │ Time │ │ HTTP │ │ Net  │ │ Storage │    │
+│        └─────┬────┘ └──────┘ └──────┘ └──────┘ └────┬────┘    │
+└──────────────┼──────────────────────────────────────┼─────────┘
+               │ flush()                              │ LittleFS
+               ▼                                      ▼
+          Framebuffer                           SPI Flash (1MB)
                │
                ▼    Core 1 (bare loop)
           HUB75 DMA ──▶  LED Matrix
@@ -62,7 +63,11 @@ With WASM, each widget is an isolated module with its own memory and a well-defi
 
 **Time service** (`src/time/`) — Provides `getUnixTimestamp()` (NTP-synced via SNTP at boot) and `setTimeout()` / recurring timers scoped per widget.
 
-**Codegen** (`build/`) — The build script scans `src/` for service traits annotated with `@wasm`, then auto-generates both the Rust wasmi host bindings (included via `include!` in `wasm.rs`) and the matching TypeScript declaration files in `widgets/lib/`. It then compiles every `widgets/*.ts` file with AssemblyScript and embeds the resulting WASM blobs in the firmware via `include_bytes!`. **No handwritten glue code needed** — adding a method to a service trait propagates to both sides automatically.
+**Codegen** (`build/`) — The build script scans `src/` for service traits annotated with `@wasm`, then auto-generates both the Rust wasmi host bindings (included via `include!` in `wasm.rs`) and the matching TypeScript declaration files in `widgets/lib/`. It also compiles every `widgets/*.ts` file with AssemblyScript and the Admin UI, then bundles them into a LittleFS image. **No handwritten glue code needed** — adding a method to a service trait propagates to both sides automatically.
+
+**Storage** (`src/storage/`) — Manages a 1MB LittleFS partition on the external SPI flash. It provides the persistence layer for `config.json` and WASM widgets, allowing updates without reflashing the firmware.
+
+**Admin UI** (`admin-ui/`) — A Single Page Application (built with Vue 3 and Vite) that provides a web-based dashboard to monitor system status, list active widgets, and reboot the device. It is served by an embedded [picoserve](https://github.com/sammccall/picoserve) instance.
 
 **Backend / Display** (`src/backend/`) — `LCDCAM64x64` wraps the [esp-hub75](https://github.com/liebman/esp-hub75) driver. Flushing the framebuffer runs on Core 1 in a tight bare-metal loop so DMA timing is never perturbed by async work on Core 0.
 
@@ -78,7 +83,9 @@ With WASM, each widget is an isolated module with its own memory and a well-defi
 - Async HTTP/HTTPS client with per-widget request routing
 - Wi-Fi connectivity with reconnect logic
 - Per-widget viewports (coordinate translation + clipping)
-- JSON build-time config (pins, Wi-Fi, widget placement)
+- JSON config stored on filesystem (Wi-Fi, widget placement)
+- LittleFS filesystem for runtime asset loading
+- Web-based Admin Dashboard (system status, widget management)
 - Dual-core: async OS on Core 0, DMA flush on Core 1
 - Five built-in widgets: clock, weather, network, spotify, carousel
 
@@ -125,7 +132,7 @@ Connect the matrix GND to the power supply GND and to the ESP GND. Connect the m
 
 ## Configuration
 
-Copy `config.example.json` to `config.json` and edit it before building. The file is parsed at compile time and baked into the firmware — no SD card or filesystem required.
+Copy `config.example.json` to `config.json` and edit it before building. The file is copied into the LittleFS filesystem image during the build process. While pin mappings are baked into the firmware for performance, all other settings (Wi-Fi, widget placement and parameters) are read from the filesystem at runtime.
 
 ```json
 {
@@ -136,9 +143,9 @@ Copy `config.example.json` to `config.json` and edit it before building. The fil
   "display": {
     "freq_mhz": 20,
     "pins": {
-      "red1": 5,  "grn1": 6,  "blu1": 7,
-      "red2": 15, "grn2": 16, "blu2": 17,
-      "addr0": 8, "addr1": 3, "addr2": 46, "addr3": 9, "addr4": 18,
+      "red1": 5,   "grn1": 6,   "blu1": 7,
+      "red2": 15,  "grn2": 16,  "blu2": 17,
+      "addr0": 8,  "addr1": 3,  "addr2": 46, "addr3": 9, "addr4": 18,
       "blank": 12, "clock": 10, "latch": 11
     }
   },
@@ -148,26 +155,35 @@ Copy `config.example.json` to `config.json` and edit it before building. The fil
       "type": "time",
       "x": 0, "y": 0, "width": 64, "height": 30,
       "config": {
-        "utc_offset":      "3600",
-        "utc_dst_offset":  "7200",
-        "dst_start_month": "3",
-        "dst_end_month":   "10"
+        "time_utc_offset":      "3600",
+        "time_utc_dst_offset":  "7200",
+        "time_dst_start_month": "3",
+        "time_dst_end_month":   "10"
       }
     },
     {
       "id": 2,
       "type": "weather",
-      "x": 0, "y": 28, "width": 64, "height": 23,
+      "x": 0, "y": 28, "width": 64, "height": 17,
       "config": {
-        "lat": "52.374",
-        "lon": "4.899"
+        "weather_lat": "52.374",
+        "weather_lon": "4.899",
+        "weather_refresh_sec": "30"
       }
     },
     {
       "id": 3,
-      "type": "network",
-      "x": 0, "y": 51, "width": 64, "height": 13,
-      "config": {}
+      "type": "carousel",
+      "x": 0, "y": 45, "width": 64, "height": 19,
+      "config": {
+        "carousel_slides": "spotify,network",
+        "carousel_period_sec": "10",
+        "spotify_client_id": "your-id",
+        "spotify_client_secret": "your-secret",
+        "spotify_refresh_token": "your-token",
+        "spotify_refresh_sec": "5",
+        "network_refresh_sec": "20"
+      }
     }
   ]
 }
@@ -196,13 +212,21 @@ cd widgets && npm install
 cargo build --release
 ```
 
-The build script compiles all `widgets/*.ts` files to WASM and embeds them in the binary automatically.
+The build script performs several tasks:
+1. Generates host bindings for WASM services.
+2. Compiles all `widgets/*.ts` files to WASM and places them in `fs-image-content/widgets/`.
+3. Builds the Admin UI and places it in `fs-image-content/admin/`.
+4. Packs the `fs-image-content/` directory into a LittleFS image at `target/littlefs.bin`.
 
 ### Flash
+
+To flash both the firmware and the filesystem image:
 
 ```bash
 cargo run --release
 ```
+
+This script uses `espflash` to write the LittleFS image to the `storage` partition (offset `0x300000`) and the firmware to the `factory` partition.
 
 ---
 
@@ -210,21 +234,21 @@ cargo run --release
 
 ### `time` — Clock & date
 
-Displays the current date (`WED 22/07`), a large HH:MM clock with a blinking colon, and a small seconds counter. Timezone is configurable via `utc_offset` / `utc_dst_offset` and DST month boundaries.
+Displays the current date (`WED 22/07`), a large HH:MM clock with a blinking colon, and a small seconds counter. Timezone is configurable via `time_utc_offset` / `time_utc_dst_offset` and DST month boundaries.
 
-Config keys: `utc_offset`, `utc_dst_offset`, `dst_start_month`, `dst_end_month` (all in seconds/month numbers as strings).
+Config keys: `time_utc_offset`, `time_utc_dst_offset`, `time_dst_start_month`, `time_dst_end_month`, `time_stale_secs`.
 
 ### `weather` — Current conditions
 
-Fetches current weather from [Open-Meteo](https://open-meteo.com/) every 10 minutes. Shows an animated icon (sun, moon, cloud, rain, snow, fog, storm), temperature in °C, and a condition label. The icon animates independently via a 200 ms timer.
+Fetches current weather from [Open-Meteo](https://open-meteo.com/) at a configurable interval. Shows an animated icon (sun, moon, cloud, rain, snow, fog, storm), temperature in °C, and a condition label. The icon animates independently via a 200 ms timer.
 
-Config keys: `lat`, `lon` (decimal degrees as strings).
+Config keys: `weather_lat`, `weather_lon` (decimal degrees as strings), `weather_refresh_sec` (poll interval in seconds, default 30).
 
 ### `network` — Connectivity status
 
 Shows a spinning animated globe, the device's internal IP address, and the public IP (fetched from `api.ipify.org`). The globe desaturates and a red slash appears when offline.
 
-No config keys required.
+Config keys: `network_refresh_sec` (poll interval in seconds, default 20).
 
 ### `spotify` — Now playing track
 
@@ -248,8 +272,8 @@ A widget is a single TypeScript file in `widgets/` that exports a `render()` fun
 
 ```typescript
 // widgets/hello.ts
-import { Drawer } from "./lib/drawer";
-import { Point, Font } from "./lib/types";
+import { Drawer } from "./lib/bindings/drawer";
+import { Point, Font } from "./lib/bindings/types";
 import { Palette } from "./lib/palette";
 
 const drawer = new Drawer();
@@ -317,11 +341,11 @@ All APIs are in `widgets/lib/` and generated automatically from the Rust service
 
 ### Handling events
 
-Events are polled inside `render()` using the `pollEvent()` function from `lib/events`:
+Events are polled inside `render()` using the `pollEvent()` function from `lib/bindings/events`:
 
 ```typescript
 import { pollEvent, EVENT_TIMER_INTERRUPT, TimerInterruptEvent,
-         EVENT_HTTP_RESPONSE, HttpResponseEvent } from "./lib/events";
+         EVENT_HTTP_RESPONSE, HttpResponseEvent } from "./lib/bindings/events";
 
 export function render(): void {
   let ev = pollEvent();
@@ -342,7 +366,7 @@ export function render(): void {
 
 ### Fonts
 
-Available via the `Font` enum in `lib/types.ts`. Ranges from `Font4x6` (tiny) to `Font10x20` (large), plus several `U8g2Font*` variants including a 3×3 minimum. Bold and italic variants exist for common sizes.
+Available via the `Font` enum in `lib/bindings/types.ts`. Ranges from `Font4x6` (tiny) to `Font10x20` (large), plus several `U8g2Font*` variants including a 3×3 minimum. Bold and italic variants exist for common sizes.
 
 ---
 
