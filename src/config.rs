@@ -87,6 +87,30 @@ pub struct WidgetEntry {
 }
 
 impl WidgetEntry {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.r#type.is_empty() {
+            return Err(String::from("Widget type cannot be empty"));
+        }
+
+        if !self
+            .r#type
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        {
+            return Err(String::from("Widget type contains invalid characters"));
+        }
+
+        if self.width == 0 || self.height == 0 {
+            return Err(String::from("Widget dimensions must be greater than zero"));
+        }
+
+        if self.x + self.width > 64 || self.y + self.height > 64 {
+            return Err(String::from("Widget is out of display bounds (64x64)"));
+        }
+
+        Ok(())
+    }
+
     pub fn as_widget(&self, fs: FS) -> Widget {
         let wasm_path = format!("/widgets/{}.wasm", self.r#type);
         let executor = Box::new(WasmExecutor::new(fs, &wasm_path));

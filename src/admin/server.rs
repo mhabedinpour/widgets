@@ -9,14 +9,14 @@ use embassy_time::Instant;
 use littlefs2::io::Write;
 use log::{error, info};
 
-use super::SystemStatusResponse;
+use super::{ApiResult, SystemStatusResponse, error_response};
 use crate::admin::file::FileResponse;
 use crate::admin::json::Json;
 use crate::config::WidgetEntry;
 use crate::storage::FS;
 use crate::widget::WidgetId;
 use crate::widget::manager::WidgetManager;
-use picoserve::response::IntoResponse;
+use picoserve::response::StatusCode;
 use picoserve::routing::{PathRouter, get, parse_path_segment, post, put};
 use picoserve::{Config as PicoserveConfig, Router};
 
@@ -59,7 +59,7 @@ impl Server {
             .route("/api/reboot", post(move || self.handle_reboot()))
     }
 
-    async fn handle_status(&self) -> impl IntoResponse {
+    async fn handle_status(&self) -> ApiResult<SystemStatusResponse> {
         let ip = self
             .stack
             .config_v4()
@@ -80,10 +80,10 @@ impl Server {
             free_psram: esp_alloc::HEAP.free_caps(esp_alloc::MemoryCapability::External.into()),
             widget_count,
         };
-        Json(response)
+        Ok(Json(response))
     }
 
-    async fn handle_get_widgets(&self) -> impl IntoResponse {
+    async fn handle_get_widgets(&self) -> ApiResult<Vec<WidgetEntry>> {
         let items = self
             .manager
             .borrow()
@@ -91,10 +91,14 @@ impl Server {
             .iter()
             .map(|(_id, w)| w.into())
             .collect::<Vec<WidgetEntry>>();
-        Json(items)
+        Ok(Json(items))
     }
 
-    async fn handle_add_widget(&self, item: WidgetEntry) -> impl IntoResponse {
+    async fn handle_add_widget(&self, item: WidgetEntry) -> ApiResult<usize> {
+        if let Err(e) = item.validate() {
+            return Err(error_response(StatusCode::BAD_REQUEST, e));
+        }
+
         let mut manager = self.manager.borrow_mut();
 
         let max_id = manager.widgets().keys().map(|id| id.0).max().unwrap_or(0);
@@ -104,32 +108,63 @@ impl Server {
 
         manager.add_widget(widget);
         manager.flush();
-        Json(id.0)
+        Ok(Json(id.0))
     }
 
-    async fn handle_remove_widget(&self, id: usize) -> impl IntoResponse {
+    async fn handle_remove_widget(&self, id: usize) -> ApiResult<&'static str> {
         let mut manager = self.manager.borrow_mut();
+        if !manager.widgets().contains_key(&WidgetId(id)) {
+            return Err(error_response(
+                StatusCode::NOT_FOUND,
+                format!("Widget with ID {} not found", id),
+            ));
+        }
+
         manager.remove_widget(WidgetId(id));
         manager.flush();
-        Json("ok")
+        Ok(Json("ok"))
     }
 
-    async fn handle_replace_widget(&self, id: usize, item: WidgetEntry) -> impl IntoResponse {
+    async fn handle_replace_widget(&self, id: usize, item: WidgetEntry) -> ApiResult<&'static str> {
+        if let Err(e) = item.validate() {
+            return Err(error_response(StatusCode::BAD_REQUEST, e));
+        }
+
         let mut manager = self.manager.borrow_mut();
+        if !manager.widgets().contains_key(&WidgetId(id)) {
+            return Err(error_response(
+                StatusCode::NOT_FOUND,
+                format!("Widget with ID {} not found", id),
+            ));
+        }
 
         let mut widget = item.as_widget(self.fs.clone());
         widget.id = WidgetId(id);
 
         manager.replace_widget(widget);
         manager.flush();
-        Json("ok")
+        Ok(Json("ok"))
     }
 
-    async fn handle_upload(&self, name: String, body: Vec<u8>) -> impl IntoResponse {
+    async fn handle_upload(&self, name: String, body: Vec<u8>) -> ApiResult<&'static str> {
+        if name.is_empty() || name.contains("..") || name.contains('/') || name.contains('\\') {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "Invalid filename: directory traversal or path segments not allowed",
+            ));
+        }
+
+        if !name.ends_with(".wasm") {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "Only .wasm files can be uploaded to the widgets directory",
+            ));
+        }
+
         let path_str = format!("/widgets/{}", name);
         let path = match littlefs2::path::PathBuf::try_from(path_str.as_str()) {
             Ok(p) => p,
-            Err(_) => return Json("invalid path"),
+            Err(_) => return Err(error_response(StatusCode::BAD_REQUEST, "Invalid filename")),
         };
 
         info!("Uploading {} ({} bytes)", path_str, body.len());
@@ -140,10 +175,13 @@ impl Server {
         });
 
         match res {
-            Ok(_) => Json("ok"),
+            Ok(_) => Ok(Json("ok")),
             Err(e) => {
                 error!("Failed to save uploaded file: {:?}", e.code());
-                Json("error")
+                Err(error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to save uploaded file to storage",
+                ))
             }
         }
     }
