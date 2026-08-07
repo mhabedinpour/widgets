@@ -13,7 +13,9 @@ import {
   Power,
   Sparkles,
   Server,
+  FileCode,
 } from 'lucide-react';
+import { WasmModuleManager } from './components/WasmModuleManager';
 
 const DEFAULT_STATUS: SystemStatus = {
   status: 'connecting',
@@ -30,7 +32,7 @@ export function App() {
   const [status, setStatus] = useState<SystemStatus>(DEFAULT_STATUS);
   const [widgets, setWidgets] = useState<WidgetInfo[]>([]);
   const [selectedWidgetId, setSelectedWidgetId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'manager' | 'inspector'>('manager');
+  const [activeTab, setActiveTab] = useState<'manager' | 'wasm' | 'inspector'>('manager');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetchDeviceData = async () => {
@@ -66,11 +68,53 @@ export function App() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleUpdateConfig = async (widgetId: number, config: Record<string, string>) => {
-    const res = await fetch('/api/widgets/config', {
+  const handleAddWidget = async (widget: Omit<WidgetInfo, 'id'>) => {
+    const res = await fetch('/api/widgets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ widget_id: widgetId, config }),
+      body: JSON.stringify({ id: 0, ...widget }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Server returned HTTP ${res.status}`);
+    }
+
+    const newId = await res.json();
+    await fetchDeviceData();
+    setSelectedWidgetId(newId);
+  };
+
+  const handleReplaceWidget = async (widgetId: number, widget: Omit<WidgetInfo, 'id'>) => {
+    const res = await fetch(`/api/widgets/${widgetId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: widgetId, ...widget }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Server returned HTTP ${res.status}`);
+    }
+
+    await fetchDeviceData();
+  };
+
+  const handleRemoveWidget = async (widgetId: number) => {
+    const res = await fetch(`/api/widgets/${widgetId}`, {
+      method: 'DELETE',
+    });
+
+    if (!res.ok) {
+      throw new Error(`Server returned HTTP ${res.status}`);
+    }
+
+    setSelectedWidgetId(null);
+    await fetchDeviceData();
+  };
+
+  const handleUploadWasm = async (file: File) => {
+    const res = await fetch(`/api/upload/${file.name}`, {
+      method: 'POST',
+      body: file,
     });
 
     if (!res.ok) {
@@ -189,7 +233,14 @@ export function App() {
                 onClick={() => setActiveTab('manager')}
               >
                 <Activity size={16} style={{ display: 'inline', marginRight: '0.4rem', verticalAlign: 'middle' }} />
-                Widget Manager & Config
+                Widget Manager
+              </button>
+              <button
+                className={`tab-btn ${activeTab === 'wasm' ? 'active' : ''}`}
+                onClick={() => setActiveTab('wasm')}
+              >
+                <FileCode size={16} style={{ display: 'inline', marginRight: '0.4rem', verticalAlign: 'middle' }} />
+                WASM Modules
               </button>
               <button
                 className={`tab-btn ${activeTab === 'inspector' ? 'active' : ''}`}
@@ -205,8 +256,12 @@ export function App() {
                 widgets={widgets}
                 selectedWidgetId={selectedWidgetId}
                 onSelectWidget={(id) => setSelectedWidgetId(id)}
-                onUpdateConfig={handleUpdateConfig}
+                onAddWidget={handleAddWidget}
+                onReplaceWidget={handleReplaceWidget}
+                onRemoveWidget={handleRemoveWidget}
               />
+            ) : activeTab === 'wasm' ? (
+              <WasmModuleManager onUpload={handleUploadWasm} />
             ) : (
               <ApiInspector />
             )}

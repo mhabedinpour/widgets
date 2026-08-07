@@ -5,7 +5,7 @@ import { Monitor, Cpu, Layers } from 'lucide-react';
 interface MatrixSimulatorProps {
   widgets: WidgetInfo[];
   selectedWidgetId: number | null;
-  onSelectWidget: (id: number) => void;
+  onSelectWidget: (id: number | null) => void;
 }
 
 export const MatrixSimulator: React.FC<MatrixSimulatorProps> = ({

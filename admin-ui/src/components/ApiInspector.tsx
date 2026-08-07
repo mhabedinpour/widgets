@@ -7,7 +7,7 @@ interface ApiInspectorProps {
 
 export const ApiInspector: React.FC<ApiInspectorProps> = ({ baseUrl = '' }) => {
   const [selectedEndpoint, setSelectedEndpoint] = useState<string>('GET /api/status');
-  const [requestBody, setRequestBody] = useState<string>('{\n  "widget_id": 1,\n  "config": {\n    "utc_offset": "3600"\n  }\n}');
+  const [requestBody, setRequestBody] = useState<string>('{\n  "type": "clock",\n  "x": 0,\n  "y": 0,\n  "width": 64,\n  "height": 32,\n  "config": {\n    "utc_offset": "3600"\n  }\n}');
   const [responseOutput, setResponseOutput] = useState<string | null>(null);
   const [status, setStatus] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -26,7 +26,7 @@ export const ApiInspector: React.FC<ApiInspectorProps> = ({ baseUrl = '' }) => {
         headers: { 'Content-Type': 'application/json' },
       };
 
-      if (method === 'POST') {
+      if (method === 'POST' || method === 'PUT') {
         options.body = requestBody;
       }
 
@@ -63,7 +63,10 @@ export const ApiInspector: React.FC<ApiInspectorProps> = ({ baseUrl = '' }) => {
         >
           <option value="GET /api/status">GET /api/status</option>
           <option value="GET /api/widgets">GET /api/widgets</option>
-          <option value="POST /api/widgets/config">POST /api/widgets/config</option>
+          <option value="POST /api/widgets">POST /api/widgets</option>
+          <option value="PUT /api/widgets/1">PUT /api/widgets/1</option>
+          <option value="DELETE /api/widgets/1">DELETE /api/widgets/1</option>
+          <option value="POST /api/upload/test.wasm">POST /api/upload/test.wasm</option>
           <option value="POST /api/reboot">POST /api/reboot</option>
         </select>
 
@@ -77,7 +80,7 @@ export const ApiInspector: React.FC<ApiInspectorProps> = ({ baseUrl = '' }) => {
         </button>
       </div>
 
-      {selectedEndpoint.startsWith('POST') && (
+      {(selectedEndpoint.startsWith('POST') || selectedEndpoint.startsWith('PUT')) && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
           <label className="form-label">Request Payload (JSON)</label>
           <textarea

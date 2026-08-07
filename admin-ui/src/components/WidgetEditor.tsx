@@ -1,55 +1,117 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { WidgetInfo } from '../types';
-import { Settings, Save, Sliders, RefreshCw } from 'lucide-react';
+import { Settings, Save, Sliders, RefreshCw, Trash2, Plus, X } from 'lucide-react';
 
 interface WidgetEditorProps {
   widgets: WidgetInfo[];
   selectedWidgetId: number | null;
-  onSelectWidget: (id: number) => void;
-  onUpdateConfig: (widgetId: number, config: Record<string, string>) => Promise<void>;
+  onSelectWidget: (id: number | null) => void;
+  onAddWidget: (widget: Omit<WidgetInfo, 'id'>) => Promise<void>;
+  onReplaceWidget: (widgetId: number, widget: Omit<WidgetInfo, 'id'>) => Promise<void>;
+  onRemoveWidget: (widgetId: number) => Promise<void>;
 }
 
 export const WidgetEditor: React.FC<WidgetEditorProps> = ({
   widgets,
   selectedWidgetId,
   onSelectWidget,
-  onUpdateConfig,
+  onAddWidget,
+  onReplaceWidget,
+  onRemoveWidget,
 }) => {
-  const selectedWidget = widgets.find((w) => w.id === selectedWidgetId) || widgets[0];
+  const isNew = selectedWidgetId === null;
+  const selectedWidget = widgets.find((w) => w.id === selectedWidgetId);
 
-  const [editingConfig, setEditingConfig] = useState<Record<string, string>>(
-    selectedWidget ? { ...selectedWidget.config } : {}
-  );
+  const [type, setType] = useState('');
+  const [x, setX] = useState(0);
+  const [y, setY] = useState(0);
+  const [width, setWidth] = useState(32);
+  const [height, setHeight] = useState(32);
+  const [editingConfig, setEditingConfig] = useState<Record<string, string>>({});
+  const [newConfigKey, setNewConfigKey] = useState('');
+  const [newConfigValue, setNewConfigValue] = useState('');
+
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (selectedWidget) {
+      setType(selectedWidget.type);
+      setX(selectedWidget.x);
+      setY(selectedWidget.y);
+      setWidth(selectedWidget.width);
+      setHeight(selectedWidget.height);
       setEditingConfig({ ...selectedWidget.config });
+    } else {
+      setType('');
+      setX(0);
+      setY(0);
+      setWidth(32);
+      setHeight(32);
+      setEditingConfig({});
     }
-  }, [selectedWidgetId]);
+    setMessage(null);
+  }, [selectedWidgetId, selectedWidget]);
 
   const handleConfigChange = (key: string, value: string) => {
     setEditingConfig((prev) => ({ ...prev, [key]: value }));
   };
 
+  const handleAddConfigPair = () => {
+    if (newConfigKey && !editingConfig[newConfigKey]) {
+      setEditingConfig((prev) => ({ ...prev, [newConfigKey]: newConfigValue }));
+      setNewConfigKey('');
+      setNewConfigValue('');
+    }
+  };
+
+  const handleRemoveConfigPair = (key: string) => {
+    const next = { ...editingConfig };
+    delete next[key];
+    setEditingConfig(next);
+  };
+
   const handleSave = async () => {
-    if (!selectedWidget) return;
     setIsSaving(true);
     setMessage(null);
     try {
-      await onUpdateConfig(selectedWidget.id, editingConfig);
-      setMessage('Configuration saved successfully!');
+      const widgetData = {
+        type,
+        x,
+        y,
+        width,
+        height,
+        config: editingConfig,
+      };
+
+      if (isNew) {
+        await onAddWidget(widgetData);
+        setMessage('Widget created successfully!');
+      } else {
+        await onReplaceWidget(selectedWidgetId!, widgetData);
+        setMessage('Widget replaced successfully!');
+      }
     } catch (err: any) {
-      setMessage(`Save failed: ${err.message}`);
+      setMessage(`Operation failed: ${err.message}`);
     } finally {
       setIsSaving(false);
     }
   };
 
-  if (!selectedWidget) {
-    return <div className="glass-panel" style={{ padding: '2rem' }}>No widgets configured.</div>;
-  }
+  const handleDelete = async () => {
+    if (!selectedWidgetId) return;
+    if (!confirm('Are you sure you want to remove this widget?')) return;
+
+    setIsSaving(true);
+    setMessage(null);
+    try {
+      await onRemoveWidget(selectedWidgetId);
+      setMessage('Widget removed successfully!');
+    } catch (err: any) {
+      setMessage(`Removal failed: ${err.message}`);
+      setIsSaving(false);
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -57,60 +119,97 @@ export const WidgetEditor: React.FC<WidgetEditorProps> = ({
         <div className="widget-card-header">
           <div className="widget-title">
             <Settings size={20} color="var(--accent-cyan)" />
-            Widget #{selectedWidget.id}: {selectedWidget.type}
-            <span className="widget-type-badge">{selectedWidget.type}.ts</span>
+            {isNew ? 'New Widget' : `Widget #${selectedWidgetId}: ${type}`}
           </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {widgets.map((w) => (
               <button
                 key={w.id}
-                className={`btn ${w.id === selectedWidget.id ? 'btn-primary' : 'btn-secondary'}`}
+                className={`btn ${w.id === selectedWidgetId ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => onSelectWidget(w.id)}
                 style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
               >
                 #{w.id} {w.type}
               </button>
             ))}
+            <button
+              className={`btn ${isNew ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => onSelectWidget(null)}
+              style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
+            >
+              <Plus size={14} /> New
+            </button>
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          <span className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Sliders size={14} color="var(--accent-purple)" /> Viewport Coordinates (64×64 Panel Bounds)
-          </span>
-          <div className="coords-grid">
-            <div className="form-group">
-              <label className="form-label">X Offset</label>
-              <input className="form-input" type="number" value={selectedWidget.x} readOnly />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Y Offset</label>
-              <input className="form-input" type="number" value={selectedWidget.y} readOnly />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Width</label>
-              <input className="form-input" type="number" value={selectedWidget.width} readOnly />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Height</label>
-              <input className="form-input" type="number" value={selectedWidget.height} readOnly />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div className="form-group">
+            <label className="form-label">Widget Type (WASM Module Name)</label>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <input
+                    className="form-input"
+                    style={{ flex: 1 }}
+                    placeholder="e.g. clock, weather, news"
+                    value={type}
+                    onChange={(e) => setType(e.target.value)}
+                />
+                <span className="widget-type-badge">{type || '?'}.wasm</span>
             </div>
           </div>
-        </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-          <span className="form-label">Dynamic Key-Value Configuration</span>
-          {Object.keys(editingConfig).length === 0 ? (
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-              No custom config parameters defined for this widget.
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <span className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Sliders size={14} color="var(--accent-purple)" /> Viewport Coordinates (64×64 Panel Bounds)
+            </span>
+            <div className="coords-grid">
+              <div className="form-group">
+                <label className="form-label">X Offset</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  value={x}
+                  onChange={(e) => setX(parseInt(e.target.value) || 0)}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Y Offset</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  value={y}
+                  onChange={(e) => setY(parseInt(e.target.value) || 0)}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Width</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  value={width}
+                  onChange={(e) => setWidth(parseInt(e.target.value) || 0)}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Height</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  value={height}
+                  onChange={(e) => setHeight(parseInt(e.target.value) || 0)}
+                />
+              </div>
             </div>
-          ) : (
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <span className="form-label">Dynamic Key-Value Configuration</span>
             <table className="config-kv-table">
               <thead>
                 <tr>
                   <th>Parameter Key</th>
                   <th>Value</th>
+                  <th style={{ width: '40px' }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -125,11 +224,50 @@ export const WidgetEditor: React.FC<WidgetEditorProps> = ({
                         onChange={(e) => handleConfigChange(key, e.target.value)}
                       />
                     </td>
+                    <td>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ padding: '0.2rem', minWidth: 'unset' }}
+                        onClick={() => handleRemoveConfigPair(key)}
+                      >
+                        <X size={14} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
+                <tr>
+                  <td>
+                    <input
+                      className="form-input"
+                      style={{ width: '100%' }}
+                      placeholder="New key..."
+                      value={newConfigKey}
+                      onChange={(e) => setNewConfigKey(e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      className="form-input"
+                      style={{ width: '100%' }}
+                      placeholder="New value..."
+                      value={newConfigValue}
+                      onChange={(e) => setNewConfigValue(e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <button
+                      className="btn btn-secondary"
+                      style={{ padding: '0.2rem', minWidth: 'unset' }}
+                      onClick={handleAddConfigPair}
+                      disabled={!newConfigKey}
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </td>
+                </tr>
               </tbody>
             </table>
-          )}
+          </div>
         </div>
 
         {message && (
@@ -137,18 +275,25 @@ export const WidgetEditor: React.FC<WidgetEditorProps> = ({
             fontSize: '0.85rem',
             padding: '0.5rem 0.75rem',
             borderRadius: '6px',
-            background: message.includes('failed') ? 'rgba(255,71,87,0.15)' : 'rgba(0,255,136,0.15)',
-            color: message.includes('failed') ? '#ff4757' : 'var(--accent-emerald)',
-            border: `1px solid ${message.includes('failed') ? '#ff4757' : 'var(--accent-emerald)'}`
+            background: message.includes('failed') || message.includes('failed') ? 'rgba(255,71,87,0.15)' : 'rgba(0,255,136,0.15)',
+            color: message.includes('failed') || message.includes('failed') ? '#ff4757' : 'var(--accent-emerald)',
+            border: `1px solid ${message.includes('failed') || message.includes('failed') ? '#ff4757' : 'var(--accent-emerald)'}`
           }}>
             {message}
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
-          <button className="btn btn-primary" onClick={handleSave} disabled={isSaving}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginTop: '0.5rem' }}>
+          {!isNew && (
+            <button className="btn btn-danger" onClick={handleDelete} disabled={isSaving}>
+              <Trash2 size={16} />
+              Remove Widget
+            </button>
+          )}
+          <div style={{ flex: 1 }}></div>
+          <button className="btn btn-primary" onClick={handleSave} disabled={isSaving || !type}>
             {isSaving ? <RefreshCw className="spin" size={16} /> : <Save size={16} />}
-            Apply & Save to Firmware
+            {isNew ? 'Create Widget' : 'Replace Widget'}
           </button>
         </div>
       </div>

@@ -19,16 +19,24 @@ pub struct Config {
     pub widgets: RefCell<Vec<WidgetEntry>>,
 }
 
-const CONFIG_FILE: &str = "./config.json";
+const CONFIG_FILE: &str = "/config.json";
 
 impl Config {
     pub fn save(&self, fs: FS) -> Result<(), littlefs2::io::Error> {
         let json = serde_json::to_vec(self).map_err(|_| littlefs2::io::Error::IO)?;
         let path = littlefs2::path::PathBuf::try_from(CONFIG_FILE).unwrap();
-        fs.create_file_and_then(&path, |file| {
-            file.write_all(&json)?;
-            Ok(())
-        })
+        fs.open_file_with_options_and_then(
+            |opts| {
+                opts.truncate(true);
+
+                opts
+            },
+            &path,
+            |file| {
+                file.write_all(&json)?;
+                Ok(())
+            },
+        )
     }
 
     pub fn load(fs: FS) -> Result<Arc<Config>, littlefs2::io::Error> {

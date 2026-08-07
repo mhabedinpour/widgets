@@ -55,7 +55,11 @@ impl WidgetManager {
             config: widget.config.clone(),
         });
 
+        let id = widget.id;
         self.widgets.insert(widget.id, widget);
+
+        self.widgets.get_mut(&id).unwrap().executor.render(None);
+        self.drawer.flush();
     }
 
     pub fn widgets(&self) -> &BTreeMap<WidgetId, Widget> {
@@ -76,15 +80,8 @@ impl WidgetManager {
             .set_widgets(self.widgets.iter().map(|(_id, w)| w.into()).collect());
 
         if let Err(e) = self.config.save(self.fs.clone()) {
-            log::error!("Failed to save config: {:?}", e);
+            log::error!("Failed to save config: {:?}", e.code());
         }
-    }
-
-    pub fn render(&mut self) {
-        for (_, widget) in self.widgets.iter_mut() {
-            widget.executor.render(None);
-        }
-        self.drawer.flush();
     }
 
     pub fn poll_events(&mut self) {

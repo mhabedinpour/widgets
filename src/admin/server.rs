@@ -6,16 +6,17 @@ use core::cell::RefCell;
 use embassy_net::Stack;
 use embassy_net::tcp::TcpSocket;
 use embassy_time::Instant;
+use littlefs2::io::Write;
 use log::{error, info};
 
 use super::SystemStatusResponse;
 use crate::admin::file::FileResponse;
+use crate::admin::json::Json;
 use crate::config::WidgetEntry;
 use crate::storage::FS;
 use crate::widget::WidgetId;
 use crate::widget::manager::WidgetManager;
 use picoserve::response::IntoResponse;
-use picoserve::response::json::Json;
 use picoserve::routing::{PathRouter, get, parse_path_segment, post, put};
 use picoserve::{Config as PicoserveConfig, Router};
 
@@ -50,6 +51,10 @@ impl Server {
                     }
                 })
                 .delete(move |id: usize| self.handle_remove_widget(id)),
+            )
+            .route(
+                ("/api/upload", parse_path_segment::<String>()),
+                post(move |name: String, body: Vec<u8>| self.handle_upload(name, body)),
             )
             .route("/api/reboot", post(move || self.handle_reboot()))
     }
@@ -118,6 +123,29 @@ impl Server {
         manager.replace_widget(widget);
         manager.flush();
         Json("ok")
+    }
+
+    async fn handle_upload(&self, name: String, body: Vec<u8>) -> impl IntoResponse {
+        let path_str = format!("/widgets/{}", name);
+        let path = match littlefs2::path::PathBuf::try_from(path_str.as_str()) {
+            Ok(p) => p,
+            Err(_) => return Json("invalid path"),
+        };
+
+        info!("Uploading {} ({} bytes)", path_str, body.len());
+
+        let res = self.fs.create_file_and_then(&path, |file| {
+            file.write_all(&body)?;
+            Ok(())
+        });
+
+        match res {
+            Ok(_) => Json("ok"),
+            Err(e) => {
+                error!("Failed to save uploaded file: {:?}", e.code());
+                Json("error")
+            }
+        }
     }
 
     async fn handle_reboot(&self) -> Json<&'static str> {

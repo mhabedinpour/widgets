@@ -24,6 +24,7 @@ const TAIL: [Color; 8] = [
 
 pub async fn run(drawer: &dyn GlobalDrawer, stack: embassy_net::Stack<'static>) {
     let full = Rect::new(Point::new(0, 0), Size::new(64, 64));
+    let mut d = drawer.scoped(full);
     let mut frame: u32 = 0;
 
     loop {
@@ -32,8 +33,6 @@ pub async fn run(drawer: &dyn GlobalDrawer, stack: embassy_net::Stack<'static>) 
         }
 
         {
-            let mut d = drawer.scoped(full);
-
             d.execute_clear(ClearData {
                 color: Color::BLACK,
             });

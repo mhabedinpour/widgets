@@ -38,6 +38,7 @@ use widgets::time::timer::TimeService;
 use widgets::widget::manager::WidgetManager;
 
 use embassy_net::{Config as NetConfig, DhcpConfig, Runner, StackResources};
+use esp_hal::ram;
 use esp_radio::wifi::{Config as WifiConfig, WifiController, sta::StationConfig};
 use widgets::config::Config;
 use widgets::time_sync::sntp::{TimeSyncService, time_sync_task};
@@ -177,7 +178,7 @@ async fn main(spawner: Spawner) -> ! {
     let peripherals = esp_hal::init(hal_config);
 
     esp_alloc::heap_allocator!(size: 90 * 1024);
-    esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 64000);
+    esp_alloc::heap_allocator!(#[ram(reclaimed)] size: 64000);
     esp_alloc::psram_allocator!(peripherals.PSRAM, esp_hal::psram);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
@@ -233,7 +234,6 @@ async fn main(spawner: Spawner) -> ! {
         let mut mgr = manager.borrow_mut();
         register_widgets(&mut mgr, &app_config, &file_system);
     }
-    manager.borrow_mut().render();
 
     spawner
         .spawn(admin_api_task(Server::new(stack, file_system.clone(), manager.clone())).unwrap());

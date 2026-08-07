@@ -19,7 +19,7 @@ pub struct EspFlashStorage<'a> {
 impl<'a> EspFlashStorage<'a> {
     pub fn new(flash: FLASH<'a>, partition_offset: u32) -> Self {
         Self {
-            flash: FlashStorage::new(flash),
+            flash: FlashStorage::new(flash).multicore_auto_park(),
             partition_offset,
         }
     }
@@ -30,18 +30,24 @@ impl<'a> Storage for EspFlashStorage<'a> {
     const WRITE_SIZE: usize = WRITE_SIZE;
     const BLOCK_SIZE: usize = BLOCK_SIZE;
     const BLOCK_COUNT: usize = BLOCK_COUNT;
-    type CACHE_SIZE = littlefs2::consts::U32;
-    type LOOKAHEAD_SIZE = littlefs2::consts::U8;
+    type CACHE_SIZE = CacheSize;
+    type LOOKAHEAD_SIZE = LookaheadSize;
 
     fn read(&mut self, off: usize, buf: &mut [u8]) -> Result<usize> {
         let addr = self.partition_offset + off as u32;
-        ReadStorage::read(&mut self.flash, addr, buf).map_err(|_| Error::IO)?;
+        ReadStorage::read(&mut self.flash, addr, buf).map_err(|e| {
+            log::error!("Failed to read from flash: {:?}", e);
+            Error::IO
+        })?;
         Ok(buf.len())
     }
 
     fn write(&mut self, off: usize, data: &[u8]) -> Result<usize> {
         let addr = self.partition_offset + off as u32;
-        NorFlash::write(&mut self.flash, addr, data).map_err(|_| Error::IO)?;
+        NorFlash::write(&mut self.flash, addr, data).map_err(|e| {
+            log::error!("Failed to write to flash: {:?}", e);
+            Error::IO
+        })?;
         Ok(data.len())
     }
 
@@ -49,7 +55,11 @@ impl<'a> Storage for EspFlashStorage<'a> {
         let start_addr = self.partition_offset + off as u32;
         let end_addr = start_addr + len as u32;
 
-        NorFlash::erase(&mut self.flash, start_addr, end_addr).map_err(|_| Error::IO)?;
+        NorFlash::erase(&mut self.flash, start_addr, end_addr).map_err(|e| {
+            log::error!("Failed to erase flash: {:?}", e);
+            Error::IO
+        })?;
+
         Ok(len)
     }
 }

@@ -1,4 +1,5 @@
 mod file;
+mod json;
 pub mod server;
 
 use alloc::string::String;

@@ -18,8 +18,8 @@ impl Storage for RamStorage {
     const WRITE_SIZE: usize = WRITE_SIZE;
     const BLOCK_SIZE: usize = BLOCK_SIZE;
     const BLOCK_COUNT: usize = BLOCK_COUNT;
-    type CACHE_SIZE = littlefs2::consts::U32;
-    type LOOKAHEAD_SIZE = littlefs2::consts::U8;
+    type CACHE_SIZE = CacheSize;
+    type LOOKAHEAD_SIZE = LookaheadSize;
 
     fn read(&mut self, off: usize, buf: &mut [u8]) -> LfsResult<usize> {
         let end = off + buf.len();
