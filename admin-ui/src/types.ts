@@ -4,7 +4,6 @@ export interface SystemStatus {
   ip: string;
   free_heap: number;
   free_psram: number;
-  wifi_rssi: number;
   widget_count: number;
 }
 

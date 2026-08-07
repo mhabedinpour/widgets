@@ -2,17 +2,14 @@ import { useState, useEffect } from 'react';
 import type { SystemStatus, WidgetInfo } from './types';
 import { MatrixSimulator } from './components/MatrixSimulator';
 import { WidgetEditor } from './components/WidgetEditor';
-import { ApiInspector } from './components/ApiInspector';
 import {
   Activity,
   Cpu,
-  Wifi,
   Clock,
   Layers,
   RefreshCw,
   Power,
   Sparkles,
-  Server,
   FileCode,
 } from 'lucide-react';
 import { WasmModuleManager } from './components/WasmModuleManager';
@@ -23,7 +20,6 @@ const DEFAULT_STATUS: SystemStatus = {
   ip: '0.0.0.0',
   free_heap: 0,
   free_psram: 0,
-  wifi_rssi: 0,
   widget_count: 0,
 };
 
@@ -32,11 +28,10 @@ export function App() {
   const [status, setStatus] = useState<SystemStatus>(DEFAULT_STATUS);
   const [widgets, setWidgets] = useState<WidgetInfo[]>([]);
   const [selectedWidgetId, setSelectedWidgetId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'manager' | 'wasm' | 'inspector'>('manager');
+  const [activeTab, setActiveTab] = useState<'manager' | 'wasm'>('manager');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const fetchDeviceData = async () => {
-    setIsRefreshing(true);
+  const fetchStatus = async () => {
     try {
       const resStatus = await fetch('/api/status', { signal: AbortSignal.timeout(3000) });
       if (resStatus.ok) {
@@ -46,25 +41,45 @@ export function App() {
       } else {
         setIsConnected(false);
       }
+    } catch {
+      setIsConnected(false);
+    }
+  };
 
+  const fetchWidgets = async () => {
+    try {
       const resWidgets = await fetch('/api/widgets', { signal: AbortSignal.timeout(3000) });
       if (resWidgets.ok) {
         const dataWidgets: WidgetInfo[] = await resWidgets.json();
         setWidgets(dataWidgets);
-        if (dataWidgets.length > 0 && selectedWidgetId === null) {
-          setSelectedWidgetId(dataWidgets[0].id);
-        }
+        return dataWidgets;
       }
-    } catch {
-      setIsConnected(false);
-    } finally {
-      setIsRefreshing(false);
+    } catch (err) {
+      console.error('Failed to fetch widgets', err);
     }
+    return null;
+  };
+
+  const fetchDeviceData = async () => {
+    setIsRefreshing(true);
+    const results = await Promise.allSettled([fetchStatus(), fetchWidgets()]);
+    setIsRefreshing(false);
+    
+    if (results[1].status === 'fulfilled') {
+      return results[1].value;
+    }
+    return null;
   };
 
   useEffect(() => {
-    fetchDeviceData();
-    const interval = setInterval(fetchDeviceData, 5000);
+    const init = async () => {
+      const widgetsData = await fetchDeviceData();
+      if (widgetsData && widgetsData.length > 0) {
+        setSelectedWidgetId(widgetsData[0].id);
+      }
+    };
+    init();
+    const interval = setInterval(fetchStatus, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -107,8 +122,12 @@ export function App() {
       throw new Error(`Server returned HTTP ${res.status}`);
     }
 
-    setSelectedWidgetId(null);
-    await fetchDeviceData();
+    const widgetsData = await fetchDeviceData();
+    if (widgetsData && widgetsData.length > 0) {
+      setSelectedWidgetId(widgetsData[0].id);
+    } else {
+      setSelectedWidgetId(null);
+    }
   };
 
   const handleUploadWasm = async (file: File) => {
@@ -197,15 +216,6 @@ export function App() {
 
           <div className="glass-panel metric-card">
             <div className="metric-header">
-              <span>Wi-Fi Signal (RSSI)</span>
-              <Wifi size={16} color="var(--accent-emerald)" />
-            </div>
-            <div className="metric-value">{status.wifi_rssi} dBm</div>
-            <div className="metric-subtext">Address: {status.ip}</div>
-          </div>
-
-          <div className="glass-panel metric-card">
-            <div className="metric-header">
               <span>Active WASM Widgets</span>
               <Layers size={16} color="var(--accent-amber)" />
             </div>
@@ -225,7 +235,7 @@ export function App() {
             />
           </div>
 
-          {/* Right Column: Tab View (Widget Editor / API Inspector) */}
+          {/* Right Column: Tab View (Widget Editor / WASM Manager) */}
           <div className="glass-panel" style={{ padding: '1.5rem' }}>
             <div className="tabs-header">
               <button
@@ -242,13 +252,6 @@ export function App() {
                 <FileCode size={16} style={{ display: 'inline', marginRight: '0.4rem', verticalAlign: 'middle' }} />
                 WASM Modules
               </button>
-              <button
-                className={`tab-btn ${activeTab === 'inspector' ? 'active' : ''}`}
-                onClick={() => setActiveTab('inspector')}
-              >
-                <Server size={16} style={{ display: 'inline', marginRight: '0.4rem', verticalAlign: 'middle' }} />
-                REST API Tester
-              </button>
             </div>
 
             {activeTab === 'manager' ? (
@@ -260,10 +263,8 @@ export function App() {
                 onReplaceWidget={handleReplaceWidget}
                 onRemoveWidget={handleRemoveWidget}
               />
-            ) : activeTab === 'wasm' ? (
-              <WasmModuleManager onUpload={handleUploadWasm} />
             ) : (
-              <ApiInspector />
+              <WasmModuleManager onUpload={handleUploadWasm} />
             )}
           </div>
         </div>

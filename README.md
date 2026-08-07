@@ -67,7 +67,7 @@ With WASM, each widget is an isolated module with its own memory and a well-defi
 
 **Storage** (`src/storage/`) — Manages a 1MB LittleFS partition on the external SPI flash. It provides the persistence layer for `config.json` and WASM widgets, allowing updates without reflashing the firmware.
 
-**Admin UI** (`admin-ui/`) — A Single Page Application (built with Vue 3 and Vite) that provides a web-based dashboard to monitor system status, list active widgets, and reboot the device. It is served by an embedded [picoserve](https://github.com/sammccall/picoserve) instance.
+**Admin UI** (`admin-ui/`) — A Single Page Application (built with React and Vite) that provides a web-based dashboard to monitor system status, list active widgets, and reboot the device. It is served by an embedded [picoserve](https://github.com/sammccall/picoserve) instance.
 
 **Backend / Display** (`src/backend/`) — `LCDCAM64x64` wraps the [esp-hub75](https://github.com/liebman/esp-hub75) driver. Flushing the framebuffer runs on Core 1 in a tight bare-metal loop so DMA timing is never perturbed by async work on Core 0.
 
@@ -88,9 +88,9 @@ With WASM, each widget is an isolated module with its own memory and a well-defi
 - Web-based Admin Dashboard (system status, widget management)
 - Dual-core: async OS on Core 0, DMA flush on Core 1
 - Five built-in widgets: clock, weather, network, spotify, carousel
+- OTA widget management / Admin API
 
 **Planned**
-- [ ] OTA widget updates (fetch + hot-swap WASM at runtime)
 - [ ] Brightness / gamma control
 - [ ] I/O Support (Sensors, Switches, etc)
 
@@ -190,6 +190,25 @@ Copy `config.example.json` to `config.json` and edit it before building. The fil
 ```
 
 `widgets` is a list of placement + config objects. `type` matches the filename in `widgets/` (without `.ts`). `x`/`y`/`width`/`height` define the widget's viewport on the 64×64 panel. The `config` object is passed as key-value strings to the widget at runtime via the `Config` API.
+
+---
+
+## Admin UI
+
+The firmware includes an embedded web server (running on port 8080) that serves a dashboard for managing the device at runtime.
+
+### Features
+- **System Metrics**: Real-time view of uptime, free heap, and PSRAM usage.
+- **Widget Manager**: Add, remove, or reconfigure widgets on the fly without editing `config.json`.
+- **WASM Module Manager**: Upload new `.wasm` files directly to the device's filesystem.
+- **Live Preview**: A simulated view of the 64x64 matrix showing widget placements.
+- **Remote Reboot**: Trigger a software reset of the ESP32-S3.
+
+### Accessing the Dashboard
+Once the device is connected to your Wi-Fi, it will log its IP address to the serial console. Open your browser and navigate to:
+```
+http://<device-ip>:8080/
+```
 
 ---
 
