@@ -15,6 +15,15 @@ use esp_hub75::{Hub75, Hub75Pins16};
 
 const PLANES: usize = 7;
 
+fn zeroed_box_in<T>() -> Box<T, esp_alloc::InternalMemory> {
+    let mut boxed = Box::<T, esp_alloc::InternalMemory>::new_uninit_in(esp_alloc::InternalMemory);
+
+    unsafe {
+        boxed.as_mut_ptr().write_bytes(0, 1);
+        boxed.assume_init()
+    }
+}
+
 macro_rules! define_lcd_cam_backend {
     ($name:ident, $flusher_name:ident, $drawer_name:ident, $fb_name:ident, $rows:expr, $cols:expr) => {
         pub type $fb_name = DmaFrameBuffer<{ compute_rows($rows) }, $cols, PLANES>;
@@ -78,13 +87,26 @@ macro_rules! define_lcd_cam_backend {
                 let hub75 = Hub75::new(lcd, pins, dma, tx_descriptors, freq)
                     .expect("failed to create Hub75!");
 
-                let fb = Rc::new(RefCell::new($fb_name::new()));
-                let shared = Arc::new(Mutex::new(RefCell::new($fb_name::new())));
+                let fb = {
+                    let uninit = Rc::<RefCell<$fb_name>>::new_zeroed();
+                    let fb = unsafe { uninit.assume_init() };
+                    fb.borrow_mut().format();
+                    fb
+                };
+                let shared = {
+                    let uninit =
+                        Arc::<Mutex<CriticalSectionRawMutex, RefCell<$fb_name>>>::new_zeroed();
+                    let shared = unsafe { uninit.assume_init() };
+                    shared.lock(|fb| fb.borrow_mut().format());
+                    shared
+                };
+                let mut own_buf = zeroed_box_in::<$fb_name>();
+                own_buf.format();
 
                 $name(
                     $flusher_name {
                         hub75: Some(hub75),
-                        own_buf: Box::new_in($fb_name::new(), esp_alloc::InternalMemory),
+                        own_buf,
                         shared: shared.clone(),
                     },
                     $drawer_name { fb, shared },

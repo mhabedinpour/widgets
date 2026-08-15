@@ -1,7 +1,7 @@
-use alloc::format;
 use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::vec::Vec;
+use alloc::{format, vec};
 use core::cell::RefCell;
 use embassy_net::Stack;
 use embassy_net::tcp::TcpSocket;
@@ -192,25 +192,23 @@ impl Server {
     }
 }
 
-#[embassy_executor::task(pool_size = 1)]
+#[embassy_executor::task(pool_size = 4)]
 pub async fn admin_api_task(server: Server) -> ! {
-    info!("Starting Picoserve REST API server & Admin Dashboard on port 8080...");
-
     let app = server.router();
     let config = PicoserveConfig::new(picoserve::Timeouts::default());
 
-    let mut rx_buffer = [0u8; 2048];
-    let mut tx_buffer = [0u8; 2048];
+    let mut rx_buffer = vec![0u8; 2048];
+    let mut tx_buffer = vec![0u8; 2048];
 
     loop {
-        let mut socket = TcpSocket::new(server.stack, &mut rx_buffer, &mut tx_buffer);
+        let mut socket = TcpSocket::new(server.stack, &mut rx_buffer[..], &mut tx_buffer[..]);
         if let Err(e) = socket.accept(8080).await {
             error!("Admin API accept error: {:?}", e);
             continue;
         }
 
-        let mut http_buffer = [0u8; 2048];
-        let _ = picoserve::Server::new(&app, &config, &mut http_buffer)
+        let mut http_buffer = vec![0u8; 2048];
+        let _ = picoserve::Server::new(&app, &config, &mut http_buffer[..])
             .serve(socket)
             .await;
     }

@@ -1,3 +1,4 @@
+use alloc::vec;
 use core::cell::Cell;
 use critical_section::Mutex;
 use embassy_net::udp::{PacketMetadata, UdpSocket};
@@ -144,15 +145,15 @@ impl TimeSyncService {
 
     async fn sync_once(&self) -> Result<i64, &'static str> {
         let mut rx_meta = [PacketMetadata::EMPTY; 2];
-        let mut rx_buffer = [0u8; 1024];
+        let mut rx_buffer = vec![0u8; 1024];
         let mut tx_meta = [PacketMetadata::EMPTY; 2];
-        let mut tx_buffer = [0u8; 1024];
+        let mut tx_buffer = vec![0u8; 1024];
         let mut socket = UdpSocket::new(
             self.stack,
             &mut rx_meta,
-            &mut rx_buffer,
+            &mut rx_buffer[..],
             &mut tx_meta,
-            &mut tx_buffer,
+            &mut tx_buffer[..],
         );
         if let Err(e) = socket.bind(12345) {
             log::error!("TimeSyncService: failed to bind socket: {:?}", e);

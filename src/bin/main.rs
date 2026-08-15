@@ -46,7 +46,7 @@ use widgets::time_sync::sntp::{TimeSyncService, time_sync_task};
 // Generated from config.json at build time.
 include!(concat!(env!("OUT_DIR"), "/config.rs"));
 
-static STACK_NET: StaticCell<StackResources<8>> = StaticCell::new();
+static STACK_NET: StaticCell<StackResources<16>> = StaticCell::new();
 static FLUSHER_STACK: StaticCell<HalStack<2048>> = StaticCell::new();
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
@@ -135,7 +135,7 @@ fn setup_network(
     let (stack, runner) = embassy_net::new(
         interfaces.station,
         NetConfig::dhcpv4(DhcpConfig::default()),
-        STACK_NET.init(StackResources::<8>::new()),
+        STACK_NET.init(StackResources::<16>::new()),
         seed,
     );
 
@@ -177,8 +177,8 @@ async fn main(spawner: Spawner) -> ! {
     let hal_config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(hal_config);
 
-    esp_alloc::heap_allocator!(size: 90 * 1024);
-    esp_alloc::heap_allocator!(#[ram(reclaimed)] size: 64000);
+    esp_alloc::heap_allocator!(size: 70 * 1024);
+    esp_alloc::heap_allocator!(#[ram(reclaimed)] size: 73000);
     esp_alloc::psram_allocator!(peripherals.PSRAM, esp_hal::psram);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
@@ -235,8 +235,12 @@ async fn main(spawner: Spawner) -> ! {
         register_widgets(&mut mgr, &app_config, &file_system);
     }
 
-    spawner
-        .spawn(admin_api_task(Server::new(stack, file_system.clone(), manager.clone())).unwrap());
+    info!("Starting Picoserve REST API server & Admin Dashboard on port 8080 (4 workers)...");
+    for _ in 0..4 {
+        spawner.spawn(
+            admin_api_task(Server::new(stack, file_system.clone(), manager.clone())).unwrap(),
+        );
+    }
 
     loop {
         wdt0.feed();

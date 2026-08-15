@@ -6,6 +6,7 @@ use crate::widget::WidgetId;
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
+use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::fmt::Write as FmtWrite;
@@ -391,7 +392,7 @@ async fn execute_request(
 // Per-widget embassy task
 // ---------------------------------------------------------------------------
 
-#[embassy_executor::task(pool_size = 8)]
+#[embassy_executor::task(pool_size = 6)]
 async fn widget_http_task(
     stack: Stack<'static>,
     widget_id: WidgetId,
@@ -399,10 +400,10 @@ async fn widget_http_task(
     completed: Arc<CompletedQueue>,
     stopped: Arc<AtomicBool>,
 ) {
-    let mut tcp_rx = Box::new([0u8; TCP_BUF_SIZE]);
-    let mut tcp_tx = Box::new([0u8; TCP_BUF_SIZE]);
-    let mut tls_rx = Box::new([0u8; TLS_RX_BUF_SIZE]);
-    let mut tls_tx = Box::new([0u8; TLS_TX_BUF_SIZE]);
+    let mut tcp_rx = vec![0u8; TCP_BUF_SIZE];
+    let mut tcp_tx = vec![0u8; TCP_BUF_SIZE];
+    let mut tls_rx = vec![0u8; TLS_RX_BUF_SIZE];
+    let mut tls_tx = vec![0u8; TLS_TX_BUF_SIZE];
 
     stack.wait_config_up().await;
 
